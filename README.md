@@ -70,7 +70,7 @@ openssl rsa -in private.pem -pubout -out public.pem
 
 等首次部署成功，先不要关页面。
 
-### 第 5 步：在 Vercel 配环境变量
+### 第 5 步：在 Vercel 配环境变量（管理前端/API 用）
 
 进入 Vercel 项目 -> `Settings` -> `Environment Variables`，逐个添加：
 
@@ -85,7 +85,7 @@ openssl rsa -in private.pem -pubout -out public.pem
 
 添加完后，点 `Redeploy`（或触发一次新部署）。
 
-### 第 6 步：在 GitHub 配 Actions Secrets
+### 第 6 步：在 GitHub 配 Actions Secrets（定时发信用）
 
 GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`，添加：
 
@@ -95,8 +95,9 @@ GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repo
 - `SMTP_PASS`
 - `FROM_EMAIL`
 - `JC_TO`（多个邮箱用逗号分隔）
+- `JC_RSA_PRIVATE_KEY_PEM`（`private.pem` 内容，换行改成 `\n`）
 
-> 现在 `JC_MEMBERS / JC_TEMPLATE / JC_START_WED / JC_SUBJECT` 不放 Secrets，后面由前端加密写入。
+> `JC_MEMBERS / JC_TEMPLATE / JC_START_WED / JC_SUBJECT` 不放 Secrets，全部由前端加密写入 `secure_config.json`。
 
 ### 第 7 步：打开前端页面，初始化业务配置
 
@@ -210,11 +211,11 @@ GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repo
 
 ---
 
-## 5. 环境变量配置
+## 5. 环境变量配置（已按当前实现更新）
 
 建议分别在 **Vercel Project Env**（管理 API 用）和 **GitHub Actions Secrets**（定时发送用）中配置。
 
-### 5.1 公共/发送相关
+### 5.1 GitHub Actions Secrets（发送任务运行时必须）
 
 - `SMTP_HOST`
 - `SMTP_PORT`
@@ -222,8 +223,9 @@ GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repo
 - `SMTP_PASS`
 - `FROM_EMAIL`
 - `JC_TO`（收件人邮箱组，逗号分隔）
+- `JC_RSA_PRIVATE_KEY_PEM`（解密 `secure_config.json` 所需私钥）
 
-### 5.2 Vercel API 相关
+### 5.2 Vercel Environment Variables（前端管理/API 必须）
 
 - `GITHUB_TOKEN`（可读写当前仓库）
 - `GITHUB_REPO`（格式：`owner/repo`）
@@ -231,13 +233,20 @@ GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repo
 - `STATE_PATH`（可选，默认 `state.json`）
 - `SECURE_CONFIG_PATH`（可选，默认 `secure_config.json`）
 
-### 5.3 安全相关
+### 5.3 安全相关（Vercel 端）
 
 - `PANEL_PASSWORD_HASH`（管理密码的 SHA-256 hex）
 - `JC_RSA_PUBLIC_KEY_PEM`（公钥，`\n` 形式换行）
 - `JC_RSA_PRIVATE_KEY_PEM`（私钥，`\n` 形式换行）
 
-> `JC_MEMBERS / JC_TEMPLATE / JC_START_WED / JC_SUBJECT` 已迁移为加密配置，不再要求放入 `.env`。
+### 5.4 不再使用的明文变量（不要再配置）
+
+- `JC_MEMBERS`
+- `JC_TEMPLATE`
+- `JC_START_WED`
+- `JC_SUBJECT`
+
+这些内容已经迁移到加密配置，由前端写入 `secure_config.json`。
 
 ---
 
