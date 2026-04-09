@@ -137,15 +137,33 @@ def send_email_via_smtp(
     recipients: List[str],
 ) -> None:
     """
-    使用环境变量中的 SMTP 配置发送邮件。
+    发送邮件（优先 HTTPS 邮件 API，其次 SMTP）。
+
+    说明：
+    - GitHub Actions runner 对外连 SMTP（25/465/587 等）经常会被网络策略阻断，表现为 connect timeout。
+      因此在 CI 环境中推荐使用邮件服务商提供的 HTTPS API（如 Resend / SendGrid / Mailgun 等）。
+    - 为保持兼容性，函数名仍叫 send_email_via_smtp，但内部会根据环境变量选择传输方式。
 
     需要设置的环境变量：
+    - （推荐）RESEND_API_KEY: 使用 Resend API 发信
+    - FROM_EMAIL: 发件人邮箱（SMTP/Resend 都用）
+
+    仅 SMTP 模式需要：
     - SMTP_HOST
-    - SMTP_PORT
+    - SMTP_PORT（默认 587）
     - SMTP_USER
     - SMTP_PASS
-    - FROM_EMAIL
     """
+    transport = (os.environ.get("MAIL_TRANSPORT", "") or "").strip().lower()
+    resend_key = (os.environ.get("RESEND_API_KEY", "") or "").strip()
+    if transport in ("resend", "http") or (transport == "" and resend_key):
+        _send_email_via_resend(subject, body, recipients)
+        return
+
+    _send_email_via_smtp_starttls(subject, body, recipients)
+
+
+def _send_email_via_smtp_starttls(subject: str, body: str, recipients: List[str]) -> None:
     import smtplib
 
     host = os.environ.get("SMTP_HOST", "")
@@ -155,7 +173,9 @@ def send_email_via_smtp(
     from_email = os.environ.get("FROM_EMAIL", user)
 
     if not host or not user or not password or not from_email:
-        raise RuntimeError("SMTP 配置不完整，请检查环境变量。")
+        raise RuntimeError(
+            "SMTP 配置不完整。若在 GitHub Actions 里发送，建议改用邮件服务 HTTPS API（例如设置 RESEND_API_KEY）。"
+        )
 
     msg = MIMEMultipart()
     msg["From"] = from_email
@@ -163,8 +183,64 @@ def send_email_via_smtp(
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain", "utf-8"))
 
-    with smtplib.SMTP(host, port) as server:
-        server.starttls()
-        server.login(user, password)
-        server.sendmail(from_email, recipients, msg.as_string())
+    timeout_s = float(os.environ.get("SMTP_TIMEOUT", "15") or 15)
+    try:
+        with smtplib.SMTP(host, port, timeout=timeout_s) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(user, password)
+            server.sendmail(from_email, recipients, msg.as_string())
+    except TimeoutError as e:
+        raise RuntimeError(
+            f"SMTP 连接超时（{host}:{port}）。GitHub Actions runner 可能无法直连 SMTP，建议改用 HTTPS 邮件 API（例如 Resend）。"
+        ) from e
+
+
+def _send_email_via_resend(subject: str, body: str, recipients: List[str]) -> None:
+    """
+    使用 Resend 的 HTTPS API 发信。
+
+    环境变量：
+    - RESEND_API_KEY（必需）
+    - FROM_EMAIL（必需，需为 Resend 已验证域名/地址）
+    """
+    import urllib.request
+    import urllib.error
+
+    api_key = (os.environ.get("RESEND_API_KEY", "") or "").strip()
+    from_email = (os.environ.get("FROM_EMAIL", "") or "").strip()
+    if not api_key or not from_email:
+        raise RuntimeError("RESEND_API_KEY / FROM_EMAIL 未配置，无法使用 Resend 发信。")
+
+    payload = json.dumps(
+        {
+            "from": from_email,
+            "to": recipients,
+            "subject": subject,
+            "text": body,
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=payload,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            if not (200 <= int(resp.status) < 300):
+                raise RuntimeError(f"Resend API 返回异常状态码：{resp.status}")
+    except urllib.error.HTTPError as e:
+        detail = ""
+        try:
+            detail = e.read().decode("utf-8", errors="replace")
+        except Exception:  # noqa: BLE001
+            detail = ""
+        raise RuntimeError(f"Resend API HTTP {e.code}: {detail}".strip()) from e
 
