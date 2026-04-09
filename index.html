@@ -72,11 +72,45 @@
         border: 1px solid rgba(148, 163, 184, 0.35);
         backdrop-filter: blur(4px);
       }
+      fieldset {
+        border: 1px solid rgba(148, 163, 184, 0.45);
+        border-radius: 12px;
+        padding: 14px;
+        margin: 0;
+        background: rgba(255, 255, 255, 0.55);
+      }
+      legend {
+        padding: 0 8px;
+        font-weight: 650;
+        font-size: 0.92rem;
+        color: #0f172a;
+      }
       label {
         display: block;
         margin-bottom: 0.25rem;
         font-size: 0.9rem;
         color: #6b7280;
+      }
+      .label-row {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 0.25rem;
+      }
+      .label-row label {
+        margin-bottom: 0;
+      }
+      .required {
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #0f172a;
+        background: rgba(56, 189, 248, 0.22);
+        border: 1px solid rgba(56, 189, 248, 0.3);
+        border-radius: 999px;
+        padding: 2px 8px;
+        white-space: nowrap;
       }
       input[type="text"],
       input[type="date"],
@@ -91,16 +125,54 @@
         color: #1f2937;
         font-size: 0.9rem;
         box-sizing: border-box;
+        transition: border-color 120ms ease, outline-color 120ms ease,
+          box-shadow 120ms ease;
       }
       input:focus,
       textarea:focus {
         outline: 2px solid #38bdf8;
         outline-offset: 0;
         border-color: transparent;
+        box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.28);
+      }
+      input:disabled,
+      textarea:disabled {
+        opacity: 0.72;
+        cursor: not-allowed;
       }
       textarea {
         min-height: 80px;
         resize: vertical;
+      }
+      .form {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        margin-top: 12px;
+      }
+      .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .form-help {
+        font-size: 0.78rem;
+        color: #64748b;
+        line-height: 1.6;
+      }
+      .form-actions {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      .field-error {
+        font-size: 0.78rem;
+        color: #ef4444;
+      }
+      .input-error {
+        border-color: rgba(239, 68, 68, 0.6) !important;
+        box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
       }
       .row {
         display: flex;
@@ -276,12 +348,12 @@
             <div>
               <div class="badge">
                 <span class="badge-dot"></span>
-                <span>JST 每周二 12:00 触发（每两周发送）</span>
+                <span>JST 每周二 12:00 触发（轮换一次-保持一次）</span>
               </div>
               <h1>Journal Club 邮件控制台</h1>
               <p class="small">
                 由 GitHub Actions 在 <strong>JST 每周二中午 12:00</strong> 触发；
-                发送周为<strong>每两周一次</strong>（按周三日期锚定），并支持一次性的“跳过周数”。
+                每周都会尝试发送，轮值按<strong>轮换一次-保持一次</strong>交替，并支持一次性的“跳过周数”（跳过时轮值也暂停）。
               </p>
             </div>
             <div class="hero-actions">
@@ -319,36 +391,76 @@
             本页面通过同站点的 <code>/api</code> 接口更新仓库里的 <code>state.json</code>，供
             workflow 使用。
           </p>
+          <form class="form" onsubmit="return false">
+            <fieldset>
+              <legend>轮值人员</legend>
+              <div class="form-field">
+                <div class="label-row">
+                  <label for="membersText">成员名单（每行一个）</label>
+                  <span class="required" title="该项会影响轮换队列">必填</span>
+                </div>
+                <textarea
+                  id="membersText"
+                  placeholder="Member A&#10;Member B"
+                  autocomplete="off"
+                  spellcheck="false"
+                ></textarea>
+                <div class="form-help">
+                  保存后会用于生成轮换队列；初始会按字母序排列，新成员会追加到队尾。
+                </div>
+              </div>
+            </fieldset>
 
-          <h2>轮值人员（可编辑）</h2>
-          <div style="margin-bottom: 12px">
-            <label for="membersText">成员名单（每行一个）</label>
-            <textarea id="membersText" placeholder="Member A&#10;Member B"></textarea>
-          </div>
+            <fieldset>
+              <legend>邮件模板</legend>
+              <div class="form-field">
+                <div class="label-row">
+                  <label for="templateText"
+                    >邮件主干正文（支持变量 {{presenter}} {{month}} {{day}}）</label
+                  >
+                  <span class="required" title="空模板会使用默认模板">建议填写</span>
+                </div>
+                <textarea id="templateText" autocomplete="off" spellcheck="false"></textarea>
+                <div class="form-help">
+                  系统会按周计算当期的周三日期，并替换变量后发送。
+                </div>
+              </div>
 
-          <h2>邮件主干模板（可编辑）</h2>
-          <div style="margin-bottom: 12px">
-            <label for="templateText">模板正文（支持变量 {{presenter}} {{month}} {{day}}）</label>
-            <textarea id="templateText"></textarea>
-          </div>
-          <div class="row">
-            <div class="col-1">
-              <label for="startWedInput">轮换锚点周三（JST）</label>
-              <input id="startWedInput" type="date" />
+              <div class="row">
+                <div class="col-1 form-field">
+                  <div class="label-row">
+                    <label for="startWedInput">轮换锚点周三（JST）</label>
+                    <span class="required" title="用于计算每周对应的周三">必填</span>
+                  </div>
+                  <input id="startWedInput" type="date" />
+                  <div class="form-help">
+                    这一天会作为周编号 0 的周三，此后每 7 天递增（周二触发时会对应到该周的周三）。
+                  </div>
+                </div>
+
+                <div class="col-1 form-field">
+                  <div class="label-row">
+                    <label for="subjectInput">邮件主题模板（可选）</label>
+                    <span class="pill">可选</span>
+                  </div>
+                  <input
+                    id="subjectInput"
+                    type="text"
+                    placeholder="文献分享（Journal Club） - {{presenter}}（{{month}}月{{day}}日）"
+                    autocomplete="off"
+                  />
+                  <div class="form-help">留空则使用默认主题。</div>
+                </div>
+              </div>
+            </fieldset>
+
+            <div class="form-actions">
+              <button class="btn" id="saveSecureBtn" type="button">
+                加密保存成员与模板
+              </button>
+              <span class="small muted">保存后建议点“刷新状态”确认生效。</span>
             </div>
-            <div class="col-1">
-              <label for="subjectInput">邮件主题模板（可选）</label>
-              <input
-                id="subjectInput"
-                type="text"
-                placeholder="文献分享（Journal Club） - {{presenter}}（{{month}}月{{day}}日）"
-              />
-            </div>
-          </div>
-
-          <div style="margin-top: 12px">
-            <button class="btn" id="saveSecureBtn">加密保存成员与模板</button>
-          </div>
+          </form>
           <div id="status" class="status"></div>
         </div>
       </div>

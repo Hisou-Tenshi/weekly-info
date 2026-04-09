@@ -65,12 +65,13 @@ function cycleWednesdayUtcForRun(runUtc, startWedUtc) {
   );
   if (diffDays < 0) return null;
 
-  const cycleId = Math.floor(diffDays / 14);
-  const cycleWedUtc = new Date(startWedUtc.getTime() + cycleId * 14 * 24 * 3600 * 1000);
+  // Weekly anchor: week_id = floor(diffDays / 7), wed = start_wed + 7*week_id
+  const weekId = Math.floor(diffDays / 7);
+  const weekWedUtc = new Date(startWedUtc.getTime() + weekId * 7 * 24 * 3600 * 1000);
   // normalize to JST midnight for display stability
-  const cycleWedJst = new Date(cycleWedUtc.getTime() + jstOffsetMs);
-  cycleWedJst.setHours(0, 0, 0, 0);
-  return new Date(cycleWedJst.getTime() - jstOffsetMs);
+  const weekWedJst = new Date(weekWedUtc.getTime() + jstOffsetMs);
+  weekWedJst.setHours(0, 0, 0, 0);
+  return new Date(weekWedJst.getTime() - jstOffsetMs);
 }
 
 function computeNextSend({ skip_weeks_remaining }, env) {
@@ -81,9 +82,17 @@ function computeNextSend({ skip_weeks_remaining }, env) {
     if (remaining > 0) {
       remaining -= 1;
     } else {
-      const cycleWed = cycleWednesdayUtcForRun(run, startWed);
-      if (cycleWed) {
-        return { next_run_utc: run.toISOString(), event_wed_utc: cycleWed.toISOString() };
+      const weekWed = cycleWednesdayUtcForRun(run, startWed);
+      if (weekWed) {
+        // "event_wed" depends on rotate/hold:
+        // - rotate week: this week's Wed (Tue+1 day)
+        // - hold week: next week's Wed (Tue+8 days)
+        const sendStep = Math.max(0, parseInt(env.JC_SEND_STEP || "0", 10) || 0);
+        const isRotate = sendStep % 2 === 0;
+        const eventWed = isRotate
+          ? weekWed
+          : new Date(weekWed.getTime() + 7 * 24 * 3600 * 1000);
+        return { next_run_utc: run.toISOString(), event_wed_utc: eventWed.toISOString() };
       }
     }
     run = new Date(run.getTime() + 7 * 24 * 3600 * 1000);
@@ -114,10 +123,11 @@ module.exports = async (req, res) => {
     if (!requirePassword(req, res, {})) return;
     const { json } = await readStateFile();
     const skip = Math.max(0, parseInt(json.skip_weeks_remaining || 0, 10) || 0);
+    const sendStep = Math.max(0, parseInt(json.send_step || 0, 10) || 0);
     const jcStartWed = await readSecureDocStartWed("2026-04-08");
     const next = computeNextSend(
       { skip_weeks_remaining: skip },
-      { ...process.env, JC_START_WED: jcStartWed }
+      { ...process.env, JC_START_WED: jcStartWed, JC_SEND_STEP: String(sendStep) }
     );
     res.status(200).json({
       skip_weeks_remaining: skip,
