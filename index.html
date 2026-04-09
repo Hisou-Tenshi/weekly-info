@@ -417,6 +417,18 @@
         };
       }
 
+      function hasPassword() {
+        return Boolean(getPassword());
+      }
+
+      async function parseApiError(res) {
+        try {
+          const data = await res.json();
+          if (data && data.error) return String(data.error);
+        } catch {}
+        return `HTTP ${res.status}`;
+      }
+
       function formatJst(isoUtc) {
         if (!isoUtc) return null;
         const d = new Date(isoUtc);
@@ -425,6 +437,10 @@
 
       async function loadState() {
         try {
+          if (!hasPassword()) {
+            setStatus("请先输入访问密码并登录。");
+            return;
+          }
           const lock = checkFrontLock();
           if (lock.locked) {
             setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
@@ -436,7 +452,7 @@
           });
           if (!res.ok) {
             if (res.status === 401 || res.status === 429) recordFrontFailure();
-            throw new Error(`HTTP ${res.status}`);
+            throw new Error(await parseApiError(res));
           }
           clearFrontFailures();
           const data = await res.json();
@@ -450,7 +466,7 @@
           setStatus(`剩余跳过周数：${data.skip_weeks_remaining ?? 0}`);
         } catch (e) {
           console.error(e);
-          setStatus("加载状态失败，请检查 /api 是否可用。", "error");
+          setStatus(`加载状态失败：${e.message || "请检查 /api 是否可用。"}。`, "error");
         }
       }
 
@@ -490,6 +506,10 @@
 
       async function loadSecureConfig() {
         try {
+          if (!hasPassword()) {
+            setStatus("请先输入访问密码并登录。");
+            return;
+          }
           const lock = checkFrontLock();
           if (lock.locked) {
             setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
@@ -500,7 +520,7 @@
           });
           if (!res.ok) {
             if (res.status === 401 || res.status === 429) recordFrontFailure();
-            throw new Error(`HTTP ${res.status}`);
+            throw new Error(await parseApiError(res));
           }
           clearFrontFailures();
           const data = await res.json();
@@ -510,12 +530,16 @@
           subjectInput.value = data.jc_subject || "";
         } catch (e) {
           console.error(e);
-          setStatus("读取加密配置失败（请先输入访问密码）。", "error");
+          setStatus(`读取加密配置失败：${e.message || "请先输入访问密码。"}。`, "error");
         }
       }
 
       async function saveSecureConfig() {
         try {
+          if (!hasPassword()) {
+            setStatus("请先输入访问密码并登录。", "error");
+            return;
+          }
           const lock = checkFrontLock();
           if (lock.locked) {
             setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
@@ -540,13 +564,13 @@
           });
           if (!res.ok) {
             if (res.status === 401 || res.status === 429) recordFrontFailure();
-            throw new Error(`HTTP ${res.status}`);
+            throw new Error(await parseApiError(res));
           }
           clearFrontFailures();
           setStatus("已加密保存成员列表与邮件模板。", "success");
         } catch (e) {
           console.error(e);
-          setStatus("加密保存失败（请检查密码与服务端密钥配置）。", "error");
+          setStatus(`加密保存失败：${e.message || "请检查密码与服务端密钥配置。"}。`, "error");
         } finally {
           saveSecureBtn.disabled = false;
         }
@@ -582,8 +606,12 @@
       });
 
       updateAuthStateText();
-      loadState();
-      loadSecureConfig();
+      if (hasPassword()) {
+        loadState();
+        loadSecureConfig();
+      } else {
+        setStatus("请先输入访问密码并登录。");
+      }
     </script>
   </body>
 </html>
