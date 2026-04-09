@@ -10,6 +10,130 @@
 
 ---
 
+## 0. 超详细部署（照着点就行）
+
+下面是最傻瓜的一次性部署流程，按顺序做，不要跳步。
+
+### 第 0 步：准备 4 样东西
+
+- 一个 GitHub 仓库（就是当前仓库）
+- 一个 Vercel 账号
+- 可用 SMTP 邮箱账号（主机、端口、用户名、密码、发件人）
+- 一条你自己记得住的管理密码（用于前端登录）
+
+### 第 1 步：把代码推到 GitHub
+
+在本地仓库执行：
+
+```bash
+git add .
+git commit -m "setup weekly-info"
+git push
+```
+
+> 如果你已经推过，跳过这步。
+
+### 第 2 步：在本地生成密码哈希
+
+打开 PowerShell，执行（把 `your-password` 换成你的实际密码）：
+
+```powershell
+[System.BitConverter]::ToString(
+  [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+    [System.Text.Encoding]::UTF8.GetBytes("your-password")
+  )
+).Replace("-","").ToLower()
+```
+
+复制输出结果，后面要填到 `PANEL_PASSWORD_HASH`。
+
+### 第 3 步：生成 RSA 密钥对
+
+在本地执行：
+
+```bash
+openssl genrsa -out private.pem 2048
+openssl rsa -in private.pem -pubout -out public.pem
+```
+
+得到两个文件：
+
+- `private.pem`（私钥，严禁泄露）
+- `public.pem`（公钥）
+
+### 第 4 步：导入 Vercel 项目
+
+1. 打开 Vercel -> `Add New...` -> `Project`
+2. 选择当前 GitHub 仓库 `weekly-info`
+3. Framework 保持默认（静态 + serverless 即可）
+4. 点 `Deploy`
+
+等首次部署成功，先不要关页面。
+
+### 第 5 步：在 Vercel 配环境变量
+
+进入 Vercel 项目 -> `Settings` -> `Environment Variables`，逐个添加：
+
+- `GITHUB_TOKEN` = 你的 GitHub PAT（要有仓库读写权限）
+- `GITHUB_REPO` = `你的GitHub用户名/weekly-info`
+- `GITHUB_BRANCH` = `main`（如果你主分支不是 main 就填真实分支）
+- `STATE_PATH` = `state.json`
+- `SECURE_CONFIG_PATH` = `secure_config.json`
+- `PANEL_PASSWORD_HASH` = 第 2 步生成的哈希
+- `JC_RSA_PUBLIC_KEY_PEM` = `public.pem` 内容（换行改成 `\n`）
+- `JC_RSA_PRIVATE_KEY_PEM` = `private.pem` 内容（换行改成 `\n`）
+
+添加完后，点 `Redeploy`（或触发一次新部署）。
+
+### 第 6 步：在 GitHub 配 Actions Secrets
+
+GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repository secret`，添加：
+
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
+- `FROM_EMAIL`
+- `JC_TO`（多个邮箱用逗号分隔）
+
+> 现在 `JC_MEMBERS / JC_TEMPLATE / JC_START_WED / JC_SUBJECT` 不放 Secrets，后面由前端加密写入。
+
+### 第 7 步：打开前端页面，初始化业务配置
+
+1. 打开 Vercel 分配给你的域名首页
+2. 在“访问密码”输入你的管理密码
+3. 点“登录（会话 30 分钟）”
+4. 填写：
+   - 成员名单（每行一个）
+   - 邮件主干模板
+   - 轮换锚点周三（日期）
+   - 邮件主题模板（可选）
+5. 点“加密保存成员与模板”
+6. 再点“刷新状态”，确认页面能正常读到状态
+
+### 第 8 步：手动测试一次 GitHub Actions
+
+1. GitHub 仓库 -> `Actions`
+2. 找到 `Journal Club mail (JST Tue 12:00)`
+3. 点 `Run workflow`
+4. 观察日志是否成功，是否有 SMTP 报错
+
+### 第 9 步：验证成功标准（按这个对照）
+
+- 前端能登录，不报 401
+- 前端能保存加密配置，不报 500
+- 仓库里 `secure_config.json` 是密文（不是明文名单）
+- Actions 手动运行成功
+- 收件人能收到邮件（或 SMTP 日志显示成功）
+
+### 第 10 步：上线后每周维护动作（1 分钟）
+
+- 周二看一眼 Actions 是否成功
+- 需要暂停时，在前端设置跳过周数
+- 人员/模板调整时，在前端修改并加密保存
+
+---
+
 ## 1. 项目结构
 
 - `journal_club.py`：邮件发送主逻辑（GitHub Actions 调用）
