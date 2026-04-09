@@ -1,8 +1,7 @@
 {
   "version": 1,
   "algo": "rsa-oaep-sha256 + aes-256-gcm",
-  "encrypted_key_b64": "",
-  "nonce_b64": "",
-  "ciphertext_b64": ""
+  "encrypted_key_b64": "XpKCMa9gdE5mO/TBhdFf5iUNdDE7YBjwPu6lZnINW3Q264oVvrsot87Tcp441+V4r59deN77Pkm0hUK5Vp18eTssweumSbQIwpiPuiZdQ9b49mbOxC9V0sEGVb9zF5xfSFAVM8fnHAiyYP7kDsOXUyytF9EGxHfNxqzKhmCPYNGprbmW0H6lKETsedLnCe93UpcgSNUd//W2qruWMMjdvN61doBoQ/oii5OLzVkQ723jy9EmvMXLq00dHVH2COLNPRujp6d/Dyaj5XJhom/ogSodAZaGGY1xS/7EVfKecOd1C82IzS0cizOjF4hM/JBhvuLs08OUuERt8pK8LbF5wQ==",
+  "nonce_b64": "bydu57C97yMUBDBH",
+  "ciphertext_b64": "hy4gRWKr4zMW+G+TRbSH/sjAdA9PuMKELoZnnQS48y4XGxhqi4XfiTZF/3X8shLZw2gnZB9T9j3JCh6V8f/Tsgy8BY/G+kuXSftbhTlscCZ/1NJiGVFJNlA/x9KfWHlAdw=="
 }
-
