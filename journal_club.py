@@ -139,6 +139,58 @@ def _effective_run_time_jst(now_jst: datetime) -> datetime:
     return base + timedelta(days=days_until_tue)
 
 
+def _bootstrap_state_if_needed(state: dict) -> bool:
+    """
+    将“锚点周三”解释为：已经发生过一次轮换的那次周三（例如你写在名单第一行括号里的日期）。
+
+    因此在首次初始化时，自动执行一次“轮换周成功发送后的状态推进”，让下一次发送落在：
+    - 保持周
+    - 轮值人为轮换后的队首（上一周轮换前的第二位）
+
+    返回：是否修改了 state（用于决定是否需要保存）。
+    """
+    if state.get("bootstrapped_v1") is True:
+        return False
+
+    # 仅在空状态或旧字段状态下做一次性初始化
+    queue = state.get("members_queue") or []
+    step = state.get("send_step", None)
+    if isinstance(queue, list) and queue and isinstance(step, int):
+        state["bootstrapped_v1"] = True
+        return True
+
+    queue = _load_members()
+    if not queue:
+        state["members_queue"] = []
+        state["send_step"] = 0
+        state["last_presenter"] = None
+        state["bootstrapped_v1"] = True
+        return True
+
+    first = queue[0]
+    rotated = queue[1:] + [first] if len(queue) > 1 else queue[:]
+    state["members_queue"] = rotated
+    # 下一次为保持周（因为锚点周三已经“轮换过一次”）
+    state["send_step"] = 1
+    state["last_presenter"] = first
+    state["bootstrapped_v1"] = True
+    # 兼容旧字段（若存在则清掉，避免混淆）
+    state.pop("cycle_id", None)
+    state.pop("cycle_presenter", None)
+    return True
+
+
+def _base_wednesday_for_run(run_jst: datetime) -> datetime:
+    """
+    给定一次“周二 12:00 JST 触发点”，计算该次发送对应的“当周周三”（自动发送日的第二天）。
+    """
+    base = run_jst.replace(hour=0, minute=0, second=0, microsecond=0)
+    # weekday(): Mon=0 Tue=1 Wed=2
+    days_until_wed = (2 - base.weekday() + 7) % 7
+    if days_until_wed == 0:
+        return base
+    return base + timedelta(days=days_until_wed)
+
 def _load_state() -> dict:
     if not STATE_PATH.exists():
         return {
@@ -274,16 +326,22 @@ def build_mail(
     返回 (should_send, subject, body, recipients, event_wed, presenter, week_id)
     """
     run_jst = _effective_run_time_jst(now_jst)
-    should_send, week_id, week_wed = _compute_week(run_jst)
+    base_wed = _base_wednesday_for_run(run_jst)
+    start_wed = _load_start_wednesday().replace(hour=0, minute=0, second=0, microsecond=0)
+    if base_wed < start_wed:
+        return False, "", "", _load_recipients(), None, "", 0
+
+    diff_days = (base_wed - start_wed).days
+    week_id = diff_days // 7
     recipients = _load_recipients()
-    if not should_send or not recipients:
+    if not recipients:
         return False, "", "", recipients, None, "", week_id
 
     presenter = _pick_presenter_for_week(state)
     # 发表日期规则：
     # - 轮换周：当周周三（自动发送日次日）
     # - 保持周：下一周周三（自动发送日第 8 天）
-    event_wed = week_wed if _is_rotate_week(state) else (week_wed + timedelta(days=7))
+    event_wed = base_wed if _is_rotate_week(state) else (base_wed + timedelta(days=7))
     month = event_wed.month
     day = event_wed.day
 
@@ -321,6 +379,14 @@ def main() -> None:
 
     now_jst = datetime.now(tz=timezone.utc).astimezone(JST)
     state = _load_state()
+
+    # 首次初始化：根据锚点周三预推进一次轮换，避免第一次触发还使用“锚点当天的第一位”
+    if args.send_only:
+        state = dict(state)
+        _bootstrap_state_if_needed(state)
+    else:
+        if _bootstrap_state_if_needed(state):
+            _save_state(state)
     if args.send_only:
         should_send, subject, body, recipients, _, _, _ = build_mail(now_jst, state)
         if should_send:

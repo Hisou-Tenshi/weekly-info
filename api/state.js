@@ -50,57 +50,74 @@ function parseIsoDateJst(isoDate) {
   return new Date(utc);
 }
 
-function cycleWednesdayUtcForRun(runUtc, startWedUtc) {
-  const jstOffsetMs = 9 * 60 * 60 * 1000;
-  const runJst = new Date(runUtc.getTime() + jstOffsetMs);
-  const runJstMidnight = new Date(runJst);
-  runJstMidnight.setHours(0, 0, 0, 0);
-
-  const startJst = new Date(startWedUtc.getTime() + jstOffsetMs);
-  const startJstMidnight = new Date(startJst);
-  startJstMidnight.setHours(0, 0, 0, 0);
-
-  const diffDays = Math.floor(
-    (runJstMidnight.getTime() - startJstMidnight.getTime()) / (24 * 3600 * 1000)
-  );
-  if (diffDays < 0) return null;
-
-  // Weekly anchor: week_id = floor(diffDays / 7), wed = start_wed + 7*week_id
-  const weekId = Math.floor(diffDays / 7);
-  const weekWedUtc = new Date(startWedUtc.getTime() + weekId * 7 * 24 * 3600 * 1000);
-  // normalize to JST midnight for display stability
-  const weekWedJst = new Date(weekWedUtc.getTime() + jstOffsetMs);
-  weekWedJst.setHours(0, 0, 0, 0);
-  return new Date(weekWedJst.getTime() - jstOffsetMs);
+function baseWednesdayUtcForRun(runUtc) {
+  // "当周周三" = 自动触发周二的次日周三
+  return nextWednesdayJst(runUtc);
 }
 
-function computeNextSend({ skip_weeks_remaining }, env) {
-  const startWed = parseIsoDateJst(env.JC_START_WED || "2026-04-08");
-  let remaining = Math.max(0, parseInt(skip_weeks_remaining || 0, 10) || 0);
-  let run = nextTuesdayNoonJst(new Date());
+function bootstrapIfNeeded(stateJson, members) {
+  const already = stateJson && stateJson.bootstrapped_v1 === true;
+  const queue = Array.isArray(stateJson?.members_queue) ? stateJson.members_queue : [];
+  const hasStep = typeof stateJson?.send_step !== "undefined";
+  if (already) return { ...stateJson };
+  if (queue.length && hasStep) return { ...stateJson, bootstrapped_v1: true };
+
+  const sorted = (Array.isArray(members) ? members : [])
+    .map((x) => String(x).trim())
+    .filter(Boolean)
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+  if (!sorted.length) {
+    return {
+      ...stateJson,
+      members_queue: [],
+      send_step: 0,
+      bootstrapped_v1: true,
+    };
+  }
+  const first = sorted[0];
+  const rotated = sorted.length > 1 ? [...sorted.slice(1), first] : [...sorted];
+  return {
+    ...stateJson,
+    members_queue: rotated,
+    send_step: 1,
+    last_presenter: first,
+    bootstrapped_v1: true,
+  };
+}
+
+function computeNextSend(stateJson, plain, nowUtc = new Date()) {
+  const startWed = parseIsoDateJst(plain.jc_start_wed || "2026-04-08");
+  let remaining = Math.max(0, parseInt(stateJson?.skip_weeks_remaining || 0, 10) || 0);
+  let run = nextTuesdayNoonJst(nowUtc);
+  const st = bootstrapIfNeeded(stateJson || {}, plain.jc_members || []);
+  const sendStep = Math.max(0, parseInt(st.send_step || 0, 10) || 0);
+  const isRotate = sendStep % 2 === 0;
+  const queue = Array.isArray(st.members_queue) ? st.members_queue : [];
+  const presenter = queue.length ? String(queue[0]) : "";
+  const mode = isRotate ? "rotate" : "hold";
   for (let i = 0; i < 260; i++) {
     if (remaining > 0) {
       remaining -= 1;
     } else {
-      const weekWed = cycleWednesdayUtcForRun(run, startWed);
-      if (weekWed) {
-        // "event_wed" depends on rotate/hold:
-        // - rotate week: this week's Wed (Tue+1 day)
-        // - hold week: next week's Wed (Tue+8 days)
-        const sendStep = Math.max(0, parseInt(env.JC_SEND_STEP || "0", 10) || 0);
-        const isRotate = sendStep % 2 === 0;
+      const baseWed = baseWednesdayUtcForRun(run);
+      if (baseWed && baseWed.getTime() >= startWed.getTime()) {
         const eventWed = isRotate
-          ? weekWed
-          : new Date(weekWed.getTime() + 7 * 24 * 3600 * 1000);
-        return { next_run_utc: run.toISOString(), event_wed_utc: eventWed.toISOString() };
+          ? baseWed
+          : new Date(baseWed.getTime() + 7 * 24 * 3600 * 1000);
+        return {
+          next_run_utc: run.toISOString(),
+          event_wed_utc: eventWed.toISOString(),
+          next_presenter: presenter,
+          next_mode: mode,
+        };
       }
     }
     run = new Date(run.getTime() + 7 * 24 * 3600 * 1000);
   }
-  return { next_run_utc: null, event_wed_utc: null };
+  return { next_run_utc: null, event_wed_utc: null, next_presenter: presenter, next_mode: mode };
 }
 
-async function readSecureDocStartWed(defaultStartWed) {
+async function readSecureDocPlain(defaultStartWed) {
   try {
     const { owner, repo } = getRepoParts();
     const branch = getBranch();
@@ -112,9 +129,12 @@ async function readSecureDocStartWed(defaultStartWed) {
     const content = Buffer.from(data.content || "", "base64").toString("utf8");
     const encrypted = JSON.parse(content || "{}");
     const plain = decryptSecurePayload(encrypted);
-    return String(plain.jc_start_wed || defaultStartWed);
+    return {
+      jc_start_wed: String(plain.jc_start_wed || defaultStartWed),
+      jc_members: Array.isArray(plain.jc_members) ? plain.jc_members : [],
+    };
   } catch {
-    return defaultStartWed;
+    return { jc_start_wed: defaultStartWed, jc_members: [] };
   }
 }
 
@@ -123,12 +143,8 @@ module.exports = async (req, res) => {
     if (!requirePassword(req, res, {})) return;
     const { json } = await readStateFile();
     const skip = Math.max(0, parseInt(json.skip_weeks_remaining || 0, 10) || 0);
-    const sendStep = Math.max(0, parseInt(json.send_step || 0, 10) || 0);
-    const jcStartWed = await readSecureDocStartWed("2026-04-08");
-    const next = computeNextSend(
-      { skip_weeks_remaining: skip },
-      { ...process.env, JC_START_WED: jcStartWed, JC_SEND_STEP: String(sendStep) }
-    );
+    const plain = await readSecureDocPlain("2026-04-08");
+    const next = computeNextSend({ ...json, skip_weeks_remaining: skip }, plain, new Date());
     res.status(200).json({
       skip_weeks_remaining: skip,
       ...next,

@@ -434,7 +434,8 @@
                   </div>
                   <input id="startWedInput" type="date" />
                   <div class="form-help">
-                    这一天会作为周编号 0 的周三，此后每 7 天递增（周二触发时会对应到该周的周三）。
+                    建议填写“已经发生过轮换的那次周三”（例如你在名单第一行括号里写的日期）。
+                    系统会据此把下次发送视为“保持周”，轮值人为轮换后的队首。
                   </div>
                 </div>
 
@@ -663,8 +664,14 @@
           skipWeeksInput.value = data.skip_weeks_remaining ?? 0;
           const nextRunJst = formatJst(data.next_run_utc);
           const eventWedJst = formatJst(data.event_wed_utc);
+          const nextPresenter = data.next_presenter ? String(data.next_presenter) : "";
+          const nextMode = data.next_mode ? String(data.next_mode) : "";
+          const modeText =
+            nextMode === "rotate" ? "轮换周" : nextMode === "hold" ? "保持周" : "";
           nextSendPill.textContent = nextRunJst
-            ? `下次发送（触发）：${nextRunJst}；对应周三：${eventWedJst || "-"}`
+            ? `下次发送（触发）：${nextRunJst}；轮值：${nextPresenter || "-"}${
+                modeText ? `（${modeText}）` : ""
+              }；轮值日期（周三）：${eventWedJst || "-"}`
             : "下次发送：未知（请检查加密配置中的锚点周三）";
 
           setStatus(`剩余跳过周数：${data.skip_weeks_remaining ?? 0}`);
