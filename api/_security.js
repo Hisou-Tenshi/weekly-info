@@ -125,8 +125,60 @@ function envPem(name) {
   return envRequired(name).replace(/\\n/g, "\n");
 }
 
+function normalizePem(raw) {
+  let text = String(raw || "").trim();
+  if (
+    (text.startsWith('"') && text.endsWith('"')) ||
+    (text.startsWith("'") && text.endsWith("'"))
+  ) {
+    text = text.slice(1, -1).trim();
+  }
+  text = text.replace(/\r/g, "").replace(/\\n/g, "\n");
+  if (/-----BEGIN [^-]+-----/.test(text)) return text;
+
+  const compact = text.replace(/\s+/g, "");
+  if (!compact) return text;
+
+  try {
+    const decoded = Buffer.from(compact, "base64").toString("utf8").trim();
+    if (/-----BEGIN [^-]+-----/.test(decoded)) {
+      return decoded.replace(/\r/g, "");
+    }
+  } catch {}
+
+  return text;
+}
+
+function getPublicKey() {
+  const keyText = normalizePem(envPem("JC_RSA_PUBLIC_KEY_PEM"));
+  try {
+    return crypto.createPublicKey(keyText);
+  } catch (e1) {
+    try {
+      return crypto.createPublicKey({ key: keyText, format: "pem", type: "spki" });
+    } catch (e2) {
+      const msg = e1 && e1.message ? e1.message : String(e1);
+      throw new Error(`Invalid JC_RSA_PUBLIC_KEY_PEM: ${msg}`);
+    }
+  }
+}
+
+function getPrivateKey() {
+  const keyText = normalizePem(envPem("JC_RSA_PRIVATE_KEY_PEM"));
+  try {
+    return crypto.createPrivateKey(keyText);
+  } catch (e1) {
+    try {
+      return crypto.createPrivateKey({ key: keyText, format: "pem", type: "pkcs8" });
+    } catch (e2) {
+      const msg = e1 && e1.message ? e1.message : String(e1);
+      throw new Error(`Invalid JC_RSA_PRIVATE_KEY_PEM: ${msg}`);
+    }
+  }
+}
+
 function encryptSecurePayload(payloadObj) {
-  const publicKeyPem = envPem("JC_RSA_PUBLIC_KEY_PEM");
+  const publicKey = getPublicKey();
   const plaintext = Buffer.from(JSON.stringify(payloadObj), "utf8");
   const aesKey = crypto.randomBytes(32);
   const nonce = crypto.randomBytes(12);
@@ -138,7 +190,7 @@ function encryptSecurePayload(payloadObj) {
 
   const encryptedKey = crypto.publicEncrypt(
     {
-      key: publicKeyPem,
+      key: publicKey,
       oaepHash: "sha256",
       padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
     },
@@ -155,7 +207,7 @@ function encryptSecurePayload(payloadObj) {
 }
 
 function decryptSecurePayload(doc) {
-  const privateKeyPem = envPem("JC_RSA_PRIVATE_KEY_PEM");
+  const privateKey = getPrivateKey();
   const encryptedKey = Buffer.from(doc.encrypted_key_b64 || "", "base64");
   const nonce = Buffer.from(doc.nonce_b64 || "", "base64");
   const cipherCombined = Buffer.from(doc.ciphertext_b64 || "", "base64");
@@ -171,7 +223,7 @@ function decryptSecurePayload(doc) {
 
   const aesKey = crypto.privateDecrypt(
     {
-      key: privateKeyPem,
+      key: privateKey,
       oaepHash: "sha256",
       padding: crypto.constants.RSA_PKCS1_OAEP_PADDING,
     },

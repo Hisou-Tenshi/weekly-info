@@ -696,7 +696,10 @@
         }
       }
 
-      refreshBtn.addEventListener("click", loadState);
+      refreshBtn.addEventListener("click", async () => {
+        await loadState();
+        await loadSecureConfig();
+      });
       sendNowBtn.addEventListener("click", sendNow);
       applySkipBtn.addEventListener("click", applySkip);
       saveSecureBtn.addEventListener("click", saveSecureConfig);
