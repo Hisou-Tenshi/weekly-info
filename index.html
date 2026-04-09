@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       body {
+        display: none;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
           sans-serif;
         margin: 0;
@@ -316,6 +317,7 @@
       const SESSION_MS = 30 * 60 * 1000;
       const FRONT_MAX_FAILURES = 5;
       const FRONT_LOCK_MS = 10 * 60 * 1000;
+      let appVisible = false;
 
       function nowMs() {
         return Date.now();
@@ -398,7 +400,13 @@
         authState.textContent = `已登录（约 ${remainMin} 分钟后过期）`;
       }
 
+      function setAppVisible(visible) {
+        appVisible = Boolean(visible);
+        document.body.style.display = appVisible ? "block" : "none";
+      }
+
       function setStatus(msg, type = "info") {
+        if (!appVisible) return;
         const color =
           type === "error" ? "#f97373" : type === "success" ? "#a5f3fc" : "#9ca3af";
         statusEl.innerHTML = `<span style="color:${color}">${msg}</span>`;
@@ -598,20 +606,65 @@
       logoutBtn.addEventListener("click", () => {
         clearSession();
         updateAuthStateText();
-        setStatus("已退出登录。");
+        setAppVisible(false);
       });
       panelPasswordInput.addEventListener("change", async () => {
         await loadState();
         await loadSecureConfig();
       });
 
-      updateAuthStateText();
-      if (hasPassword()) {
-        loadState();
-        loadSecureConfig();
-      } else {
-        setStatus("请先输入访问密码并登录。");
+      async function canAccessWithPassword(password) {
+        const pwd = String(password || "").trim();
+        if (!pwd) return false;
+        const lock = checkFrontLock();
+        if (lock.locked) return false;
+        try {
+          const res = await fetch(`${apiBase}/state`, {
+            headers: { "x-panel-password": pwd },
+          });
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 429) recordFrontFailure();
+            return false;
+          }
+          clearFrontFailures();
+          return true;
+        } catch {
+          return false;
+        }
       }
+
+      async function bootstrapVisibilityGate() {
+        setAppVisible(false);
+        const session = getSession();
+        if (session && session.password) {
+          panelPasswordInput.value = session.password;
+          if (await canAccessWithPassword(session.password)) {
+            updateAuthStateText();
+            setAppVisible(true);
+            await loadState();
+            await loadSecureConfig();
+            return;
+          }
+          clearSession();
+        }
+
+        const pwd = window.prompt("请输入访问密码以进入控制台：");
+        if (!pwd) return;
+        panelPasswordInput.value = pwd.trim();
+        if (!(await canAccessWithPassword(pwd))) {
+          clearSession();
+          window.alert("认证失败，页面将保持隐藏。");
+          return;
+        }
+
+        setSession(pwd.trim());
+        updateAuthStateText();
+        setAppVisible(true);
+        await loadState();
+        await loadSecureConfig();
+      }
+
+      bootstrapVisibilityGate();
     </script>
   </body>
 </html>
