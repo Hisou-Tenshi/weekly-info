@@ -149,30 +149,78 @@ function normalizePem(raw) {
   return text;
 }
 
+function looksLikeBase64(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  if (/-----BEGIN [^-]+-----/.test(t)) return false;
+  if (!/^[A-Za-z0-9+/=\s]+$/.test(t)) return false;
+  const compact = t.replace(/\s+/g, "");
+  if (compact.length < 64) return false;
+  if (compact.length % 4 !== 0) return false;
+  return true;
+}
+
 function getPublicKey() {
   const keyText = normalizePem(envPem("JC_RSA_PUBLIC_KEY_PEM"));
+  const compactB64 = keyText.replace(/\s+/g, "");
   try {
     return crypto.createPublicKey(keyText);
   } catch (e1) {
     try {
       return crypto.createPublicKey({ key: keyText, format: "pem", type: "spki" });
     } catch (e2) {
+      if (looksLikeBase64(keyText)) {
+        try {
+          const der = Buffer.from(compactB64, "base64");
+          return crypto.createPublicKey({ key: der, format: "der", type: "spki" });
+        } catch (e3) {
+          // fallthrough to final error
+        }
+      }
       const msg = e1 && e1.message ? e1.message : String(e1);
-      throw new Error(`Invalid JC_RSA_PUBLIC_KEY_PEM: ${msg}`);
+      throw new Error(
+        `Invalid JC_RSA_PUBLIC_KEY_PEM: ${msg} (expected PEM, or base64 DER spki)`
+      );
     }
   }
 }
 
 function getPrivateKey() {
   const keyText = normalizePem(envPem("JC_RSA_PRIVATE_KEY_PEM"));
+  if (/-----BEGIN ENCRYPTED PRIVATE KEY-----/.test(keyText)) {
+    throw new Error(
+      "Invalid JC_RSA_PRIVATE_KEY_PEM: encrypted private keys are not supported. Please use an unencrypted private key (BEGIN PRIVATE KEY / BEGIN RSA PRIVATE KEY)."
+    );
+  }
+  const compactB64 = keyText.replace(/\s+/g, "");
   try {
     return crypto.createPrivateKey(keyText);
   } catch (e1) {
     try {
       return crypto.createPrivateKey({ key: keyText, format: "pem", type: "pkcs8" });
     } catch (e2) {
+      // If the env var is base64 of DER bytes, try DER imports.
+      if (looksLikeBase64(keyText)) {
+        const der = Buffer.from(compactB64, "base64");
+        const candidates = [
+          { format: "der", type: "pkcs8" },
+          { format: "der", type: "pkcs1" },
+        ];
+        for (const c of candidates) {
+          try {
+            return crypto.createPrivateKey({ key: der, ...c });
+          } catch {}
+        }
+      }
+      // Also try PEM pkcs1 explicitly for older key styles.
+      try {
+        return crypto.createPrivateKey({ key: keyText, format: "pem", type: "pkcs1" });
+      } catch {}
+
       const msg = e1 && e1.message ? e1.message : String(e1);
-      throw new Error(`Invalid JC_RSA_PRIVATE_KEY_PEM: ${msg}`);
+      throw new Error(
+        `Invalid JC_RSA_PRIVATE_KEY_PEM: ${msg} (expected PEM, or base64 DER pkcs8/pkcs1)`
+      );
     }
   }
 }
