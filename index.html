@@ -1,0 +1,590 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>Journal Club 邮件控制台</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        margin: 0;
+        padding: 0;
+        background: #0f172a;
+        color: #e5e7eb;
+      }
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 24px;
+      }
+      h1 {
+        font-size: 1.6rem;
+        margin-bottom: 0.25rem;
+      }
+      h2 {
+        font-size: 1.2rem;
+        margin-top: 1.5rem;
+        margin-bottom: 0.5rem;
+      }
+      .card {
+        background: #020617;
+        border-radius: 12px;
+        padding: 20px;
+        box-shadow: 0 24px 60px rgba(15, 23, 42, 0.7);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+      }
+      label {
+        display: block;
+        margin-bottom: 0.25rem;
+        font-size: 0.9rem;
+        color: #9ca3af;
+      }
+      input[type="text"],
+      input[type="date"],
+      input[type="password"],
+      textarea,
+      input[type="number"] {
+        width: 100%;
+        padding: 8px 10px;
+        border-radius: 8px;
+        border: 1px solid #1f2937;
+        background: #020617;
+        color: #e5e7eb;
+        font-size: 0.9rem;
+        box-sizing: border-box;
+      }
+      input:focus,
+      textarea:focus {
+        outline: 2px solid #38bdf8;
+        outline-offset: 0;
+        border-color: transparent;
+      }
+      textarea {
+        min-height: 80px;
+        resize: vertical;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+      }
+      .col-2 {
+        flex: 2 1 0;
+      }
+      .col-1 {
+        flex: 1 1 0;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: rgba(15, 118, 110, 0.16);
+        color: #a5f3fc;
+        font-size: 0.75rem;
+      }
+      .badge-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #22c55e;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 8px 14px;
+        border-radius: 999px;
+        border: none;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 500;
+        background: linear-gradient(135deg, #38bdf8, #22c55e);
+        color: #020617;
+        box-shadow: 0 10px 30px rgba(56, 189, 248, 0.35);
+      }
+      .btn-secondary {
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        color: #e5e7eb;
+        box-shadow: none;
+      }
+      .btn:disabled {
+        opacity: 0.6;
+        cursor: default;
+        box-shadow: none;
+      }
+      .btn + .btn {
+        margin-left: 8px;
+      }
+      .pill {
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: rgba(15, 23, 42, 0.9);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        font-size: 0.78rem;
+        color: #9ca3af;
+      }
+      .messages-list {
+        margin-top: 8px;
+      }
+      .message-item {
+        border-radius: 10px;
+        border: 1px solid rgba(75, 85, 99, 0.9);
+        padding: 10px 10px 8px;
+        margin-bottom: 8px;
+        background: radial-gradient(
+            circle at top left,
+            rgba(56, 189, 248, 0.18),
+            transparent 55%
+          ),
+          #020617;
+      }
+      .message-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 4px;
+      }
+      .message-index {
+        font-size: 0.8rem;
+        color: #a5b4fc;
+      }
+      .small {
+        font-size: 0.78rem;
+        color: #9ca3af;
+      }
+      .status {
+        margin-top: 10px;
+        font-size: 0.82rem;
+        color: #9ca3af;
+      }
+      .status span {
+        color: #e5e7eb;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        font-size: 0.75rem;
+        color: #9ca3af;
+        margin-right: 6px;
+      }
+      .chip-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #22c55e;
+      }
+      .muted {
+        color: #6b7280;
+      }
+      @media (max-width: 640px) {
+        .row {
+          flex-direction: column;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div style="margin-bottom: 16px">
+        <div class="badge">
+          <span class="badge-dot"></span>
+          <span>JST 每周二 12:00 触发（每两周发送）</span>
+        </div>
+      </div>
+      <h1>Journal Club 邮件控制台</h1>
+      <p class="small">
+        由 GitHub Actions 在 <strong>JST 每周二中午 12:00</strong> 触发；
+        发送周为<strong>每两周一次</strong>（按周三日期锚定），并支持一次性的“跳过周数”。
+      </p>
+
+      <div class="card" style="margin-top: 16px">
+        <div class="row" style="margin-bottom: 16px; align-items: center">
+          <div class="col-2">
+            <h2 style="margin-top: 0">配置表单</h2>
+            <p class="small muted">
+              本页面通过同站点的 <code>/api</code> 接口更新仓库里的
+              <code>state.json</code>，供 workflow 使用。
+            </p>
+          </div>
+          <div class="col-1" style="text-align: right">
+            <button class="btn-secondary btn" id="refreshBtn">刷新状态</button>
+          </div>
+        </div>
+
+        <div class="row" style="margin-top: 12px">
+          <div class="col-1">
+            <label for="panelPassword">访问密码</label>
+            <input id="panelPassword" type="password" placeholder="输入你掌握的密码" />
+            <p class="small muted">仅用于调用受保护的 /api 接口（不会写入仓库）。</p>
+            <button class="btn-secondary btn" id="loginBtn" style="margin-top: 6px">
+              登录（会话 30 分钟）
+            </button>
+            <button class="btn-secondary btn" id="logoutBtn" style="margin-top: 6px">
+              退出登录
+            </button>
+            <p class="small muted" id="authState">未登录</p>
+          </div>
+          <div class="col-1">
+            <label for="skipWeeks">跳过周数</label>
+            <input
+              id="skipWeeks"
+              type="number"
+              min="0"
+              value="0"
+              placeholder="0"
+            />
+            <p class="small muted">
+              一次性跳过：如果设置为 2，则本周和下周都不会发送，且下周会自动变为 1。
+            </p>
+          </div>
+          <div class="col-1">
+            <label>&nbsp;</label>
+            <button class="btn-secondary btn" id="applySkipBtn">
+              提交跳过周数
+            </button>
+          </div>
+        </div>
+
+        <h2>轮值人员（可编辑）</h2>
+        <div style="margin-bottom: 12px">
+          <label for="membersText">成员名单（每行一个）</label>
+          <textarea id="membersText" placeholder="Member A&#10;Member B"></textarea>
+        </div>
+
+        <h2>邮件主干模板（可编辑）</h2>
+        <div style="margin-bottom: 12px">
+          <label for="templateText">模板正文（支持变量 {{presenter}} {{month}} {{day}}）</label>
+          <textarea id="templateText"></textarea>
+        </div>
+        <div class="row">
+          <div class="col-1">
+            <label for="startWedInput">轮换锚点周三（JST）</label>
+            <input id="startWedInput" type="date" />
+          </div>
+          <div class="col-1">
+            <label for="subjectInput">邮件主题模板（可选）</label>
+            <input
+              id="subjectInput"
+              type="text"
+              placeholder="文献分享（Journal Club） - {{presenter}}（{{month}}月{{day}}日）"
+            />
+          </div>
+        </div>
+
+        <div style="margin-top: 16px">
+          <span class="pill" id="nextSendPill">下次发送：加载中…</span>
+        </div>
+        <div style="margin-top: 12px">
+          <button class="btn" id="saveSecureBtn">加密保存成员与模板</button>
+        </div>
+
+        <div id="status" class="status"></div>
+      </div>
+    </div>
+
+    <script>
+      const apiBase =
+        (typeof window !== "undefined" && window.API_BASE) || "/api";
+
+      const skipWeeksInput = document.getElementById("skipWeeks");
+      const panelPasswordInput = document.getElementById("panelPassword");
+      const membersText = document.getElementById("membersText");
+      const templateText = document.getElementById("templateText");
+      const startWedInput = document.getElementById("startWedInput");
+      const subjectInput = document.getElementById("subjectInput");
+      const statusEl = document.getElementById("status");
+      const nextSendPill = document.getElementById("nextSendPill");
+      const authState = document.getElementById("authState");
+
+      const refreshBtn = document.getElementById("refreshBtn");
+      const applySkipBtn = document.getElementById("applySkipBtn");
+      const saveSecureBtn = document.getElementById("saveSecureBtn");
+      const loginBtn = document.getElementById("loginBtn");
+      const logoutBtn = document.getElementById("logoutBtn");
+
+      const SESSION_KEY = "jc_panel_session_v1";
+      const FRONT_FAIL_KEY = "jc_panel_fail_v1";
+      const SESSION_MS = 30 * 60 * 1000;
+      const FRONT_MAX_FAILURES = 5;
+      const FRONT_LOCK_MS = 10 * 60 * 1000;
+
+      function nowMs() {
+        return Date.now();
+      }
+
+      function getSession() {
+        try {
+          const raw = localStorage.getItem(SESSION_KEY);
+          if (!raw) return null;
+          const s = JSON.parse(raw);
+          if (!s.password || !s.expiresAt || nowMs() > s.expiresAt) {
+            localStorage.removeItem(SESSION_KEY);
+            return null;
+          }
+          return s;
+        } catch {
+          return null;
+        }
+      }
+
+      function setSession(password) {
+        localStorage.setItem(
+          SESSION_KEY,
+          JSON.stringify({ password, expiresAt: nowMs() + SESSION_MS })
+        );
+      }
+
+      function clearSession() {
+        localStorage.removeItem(SESSION_KEY);
+      }
+
+      function getFrontFailState() {
+        try {
+          return JSON.parse(localStorage.getItem(FRONT_FAIL_KEY) || "{}");
+        } catch {
+          return {};
+        }
+      }
+
+      function setFrontFailState(state) {
+        localStorage.setItem(FRONT_FAIL_KEY, JSON.stringify(state || {}));
+      }
+
+      function checkFrontLock() {
+        const s = getFrontFailState();
+        const now = nowMs();
+        if (s.lockUntil && now < s.lockUntil) {
+          return { locked: true, retryMs: s.lockUntil - now };
+        }
+        if (s.nextAllowedAt && now < s.nextAllowedAt) {
+          return { locked: true, retryMs: s.nextAllowedAt - now };
+        }
+        return { locked: false, retryMs: 0 };
+      }
+
+      function recordFrontFailure() {
+        const now = nowMs();
+        const s = getFrontFailState();
+        const failures = (s.failures || 0) + 1;
+        const delay = Math.min(12000, 800 * Math.pow(2, Math.max(0, failures - 1)));
+        const lockUntil = failures >= FRONT_MAX_FAILURES ? now + FRONT_LOCK_MS : 0;
+        setFrontFailState({
+          failures,
+          nextAllowedAt: lockUntil ? lockUntil : now + delay,
+          lockUntil,
+        });
+      }
+
+      function clearFrontFailures() {
+        localStorage.removeItem(FRONT_FAIL_KEY);
+      }
+
+      function updateAuthStateText() {
+        const s = getSession();
+        if (!s) {
+          authState.textContent = "未登录";
+          return;
+        }
+        const remainMin = Math.max(0, Math.floor((s.expiresAt - nowMs()) / 60000));
+        authState.textContent = `已登录（约 ${remainMin} 分钟后过期）`;
+      }
+
+      function setStatus(msg, type = "info") {
+        const color =
+          type === "error" ? "#f97373" : type === "success" ? "#a5f3fc" : "#9ca3af";
+        statusEl.innerHTML = `<span style="color:${color}">${msg}</span>`;
+      }
+
+      function getPassword() {
+        const s = getSession();
+        if (s && s.password) return s.password;
+        return (panelPasswordInput.value || "").trim();
+      }
+
+      function authHeaders() {
+        return {
+          "Content-Type": "application/json",
+          "x-panel-password": getPassword(),
+        };
+      }
+
+      function formatJst(isoUtc) {
+        if (!isoUtc) return null;
+        const d = new Date(isoUtc);
+        return d.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+      }
+
+      async function loadState() {
+        try {
+          const lock = checkFrontLock();
+          if (lock.locked) {
+            setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
+            return;
+          }
+          setStatus("正在加载状态…");
+          const res = await fetch(`${apiBase}/state`, {
+            headers: { "x-panel-password": getPassword() },
+          });
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 429) recordFrontFailure();
+            throw new Error(`HTTP ${res.status}`);
+          }
+          clearFrontFailures();
+          const data = await res.json();
+          skipWeeksInput.value = data.skip_weeks_remaining ?? 0;
+          const nextRunJst = formatJst(data.next_run_utc);
+          const eventWedJst = formatJst(data.event_wed_utc);
+          nextSendPill.textContent = nextRunJst
+            ? `下次发送（触发）：${nextRunJst}；对应周三：${eventWedJst || "-"}`
+            : "下次发送：未知（请检查加密配置中的锚点周三）";
+
+          setStatus(`剩余跳过周数：${data.skip_weeks_remaining ?? 0}`);
+        } catch (e) {
+          console.error(e);
+          setStatus("加载状态失败，请检查 /api 是否可用。", "error");
+        }
+      }
+
+      async function applySkip() {
+        try {
+          const lock = checkFrontLock();
+          if (lock.locked) {
+            setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
+            return;
+          }
+          applySkipBtn.disabled = true;
+          const weeks = parseInt(skipWeeksInput.value || "0", 10) || 0;
+          const res = await fetch(`${apiBase}/skip`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ weeks, password: getPassword() }),
+          });
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 429) recordFrontFailure();
+            throw new Error(`HTTP ${res.status}`);
+          }
+          clearFrontFailures();
+          const data = await res.json();
+          skipWeeksInput.value = data.skip_weeks_remaining ?? weeks;
+          setStatus(
+            `已更新跳过周数：${data.skip_weeks_remaining ?? weeks}。`,
+            "success"
+          );
+          await loadState();
+        } catch (e) {
+          console.error(e);
+          setStatus("更新跳过周数失败。", "error");
+        } finally {
+          applySkipBtn.disabled = false;
+        }
+      }
+
+      async function loadSecureConfig() {
+        try {
+          const lock = checkFrontLock();
+          if (lock.locked) {
+            setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
+            return;
+          }
+          const res = await fetch(`${apiBase}/secure-config`, {
+            headers: { "x-panel-password": getPassword() },
+          });
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 429) recordFrontFailure();
+            throw new Error(`HTTP ${res.status}`);
+          }
+          clearFrontFailures();
+          const data = await res.json();
+          membersText.value = (data.jc_members || []).join("\n");
+          templateText.value = data.jc_template || "";
+          startWedInput.value = data.jc_start_wed || "2026-04-08";
+          subjectInput.value = data.jc_subject || "";
+        } catch (e) {
+          console.error(e);
+          setStatus("读取加密配置失败（请先输入访问密码）。", "error");
+        }
+      }
+
+      async function saveSecureConfig() {
+        try {
+          const lock = checkFrontLock();
+          if (lock.locked) {
+            setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
+            return;
+          }
+          saveSecureBtn.disabled = true;
+          const members = membersText.value
+            .split("\n")
+            .map((x) => x.trim())
+            .filter(Boolean);
+          const payload = {
+            password: getPassword(),
+            jc_members: members,
+            jc_template: templateText.value || "",
+            jc_start_wed: (startWedInput.value || "2026-04-08").trim(),
+            jc_subject: (subjectInput.value || "").trim(),
+          };
+          const res = await fetch(`${apiBase}/secure-config`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify(payload),
+          });
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 429) recordFrontFailure();
+            throw new Error(`HTTP ${res.status}`);
+          }
+          clearFrontFailures();
+          setStatus("已加密保存成员列表与邮件模板。", "success");
+        } catch (e) {
+          console.error(e);
+          setStatus("加密保存失败（请检查密码与服务端密钥配置）。", "error");
+        } finally {
+          saveSecureBtn.disabled = false;
+        }
+      }
+
+      refreshBtn.addEventListener("click", loadState);
+      applySkipBtn.addEventListener("click", applySkip);
+      saveSecureBtn.addEventListener("click", saveSecureConfig);
+      loginBtn.addEventListener("click", async () => {
+        const lock = checkFrontLock();
+        if (lock.locked) {
+          setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
+          return;
+        }
+        const pwd = (panelPasswordInput.value || "").trim();
+        if (!pwd) {
+          setStatus("请输入访问密码。", "error");
+          return;
+        }
+        setSession(pwd);
+        updateAuthStateText();
+        await loadState();
+        await loadSecureConfig();
+      });
+      logoutBtn.addEventListener("click", () => {
+        clearSession();
+        updateAuthStateText();
+        setStatus("已退出登录。");
+      });
+      panelPasswordInput.addEventListener("change", async () => {
+        await loadState();
+        await loadSecureConfig();
+      });
+
+      updateAuthStateText();
+      loadState();
+      loadSecureConfig();
+    </script>
+  </body>
+</html>
+
