@@ -94,6 +94,10 @@ GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repo
 - `SMTP_USER`
 - `SMTP_PASS`
 - `FROM_EMAIL`
+- `SMTP_USE_SSL`（可选：`true/false`；若端口是 465 会自动视为 `true`）
+- `SMTP_STARTTLS`（可选：`true/false`；非 SSL 时默认 `true`）
+- `SMTP_TIMEOUT`（可选：连接超时秒数，默认 `20`）
+- `SMTP_DEBUG`（可选：`true` 开启 SMTP 调试日志，排查连接/握手问题）
 - `JC_TO`（多个邮箱用逗号分隔）
 - `JC_RSA_PRIVATE_KEY_PEM`（`private.pem` 内容，换行改成 `\n`）
 
@@ -222,22 +226,13 @@ GitHub 仓库 -> `Settings` -> `Secrets and variables` -> `Actions` -> `New repo
 
 ### 5.1 GitHub Actions Secrets（发送任务运行时必须）
 
+- `SMTP_HOST`
+- `SMTP_PORT`
+- `SMTP_USER`
+- `SMTP_PASS`
 - `FROM_EMAIL`
 - `JC_TO`（收件人邮箱组，逗号分隔）
 - `JC_RSA_PRIVATE_KEY_PEM`（解密 `secure_config.json` 所需私钥）
-
-二选一配置发送通道：
-
-- **方案 A（推荐 / CI 稳定）**：使用 Resend 的 HTTPS API
-  - `RESEND_API_KEY`
-  - （可选）`MAIL_TRANSPORT=resend`（不填也可以：只要设置了 `RESEND_API_KEY` 就会自动优先使用）
-
-- **方案 B（本地/自建环境可用）**：使用 SMTP（GitHub Actions 可能被阻断导致超时）
-  - `SMTP_HOST`
-  - `SMTP_PORT`
-  - `SMTP_USER`
-  - `SMTP_PASS`
-  - （可选）`SMTP_TIMEOUT`（秒，默认 15）
 
 ### 5.2 Vercel Environment Variables（前端管理/API 必须）
 
