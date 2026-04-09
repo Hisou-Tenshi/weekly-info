@@ -5,6 +5,11 @@ on:
     # JST 12:00 Tuesday == UTC 03:00 Tuesday
     - cron: "0 3 * * 2"
   workflow_dispatch:
+    inputs:
+      send_only:
+        description: "Send mail now without changing state"
+        required: false
+        default: "false"
 
 permissions:
   contents: write
@@ -36,7 +41,11 @@ jobs:
           JC_TO: ${{ secrets.JC_TO }}
           JC_RSA_PRIVATE_KEY_PEM: ${{ secrets.JC_RSA_PRIVATE_KEY_PEM }}
         run: |
-          python journal_club.py
+          if [ "${{ github.event.inputs.send_only }}" = "true" ]; then
+            python journal_club.py --send-only
+          else
+            python journal_club.py
+          fi
 
       - name: Commit updated state.json (if changed)
         run: |

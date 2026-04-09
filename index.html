@@ -32,9 +32,10 @@
       }
       .hero-actions {
         display: flex;
-        align-items: center;
+        align-items: stretch;
         gap: 8px;
         flex-wrap: wrap;
+        justify-content: flex-end;
       }
       .auth-gate {
         min-height: 100vh;
@@ -116,11 +117,14 @@
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 3px 9px;
+        padding: 4px 10px;
         border-radius: 999px;
-        background: rgba(15, 118, 110, 0.16);
-        color: #a5f3fc;
-        font-size: 0.75rem;
+        background: rgba(15, 23, 42, 0.82);
+        color: #e2e8f0;
+        border: 1px solid rgba(100, 116, 139, 0.7);
+        font-size: 0.78rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
       }
       .badge-dot {
         width: 6px;
@@ -148,6 +152,11 @@
         border: 1px solid rgba(148, 163, 184, 0.75);
         color: #334155;
         box-shadow: none;
+      }
+      .btn-warning {
+        background: linear-gradient(135deg, #f59e0b, #f97316);
+        color: #111827;
+        box-shadow: 0 10px 24px rgba(245, 158, 11, 0.28);
       }
       .btn:disabled {
         opacity: 0.6;
@@ -276,6 +285,7 @@
               </p>
             </div>
             <div class="hero-actions">
+              <button class="btn btn-warning" id="sendNowBtn">立即发送</button>
               <button class="btn-secondary btn" id="refreshBtn">刷新状态</button>
               <button class="btn-secondary btn" id="logoutBtn">退出登录</button>
             </div>
@@ -367,6 +377,7 @@
       const authState = document.getElementById("authState");
 
       const refreshBtn = document.getElementById("refreshBtn");
+      const sendNowBtn = document.getElementById("sendNowBtn");
       const applySkipBtn = document.getElementById("applySkipBtn");
       const saveSecureBtn = document.getElementById("saveSecureBtn");
       const logoutBtn = document.getElementById("logoutBtn");
@@ -657,7 +668,36 @@
         }
       }
 
+      async function sendNow() {
+        try {
+          const lock = checkFrontLock();
+          if (lock.locked) {
+            setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
+            return;
+          }
+          sendNowBtn.disabled = true;
+          setStatus("正在触发立即发送…");
+          const res = await fetch(`${apiBase}/send-now`, {
+            method: "POST",
+            headers: authHeaders(),
+            body: JSON.stringify({ password: getPassword() }),
+          });
+          if (!res.ok) {
+            if (res.status === 401 || res.status === 429) recordFrontFailure();
+            throw new Error(await parseApiError(res));
+          }
+          clearFrontFailures();
+          setStatus("已触发立即发送。该操作不会更改状态。", "success");
+        } catch (e) {
+          console.error(e);
+          setStatus(`触发立即发送失败：${e.message || "请检查配置。"}。`, "error");
+        } finally {
+          sendNowBtn.disabled = false;
+        }
+      }
+
       refreshBtn.addEventListener("click", loadState);
+      sendNowBtn.addEventListener("click", sendNow);
       applySkipBtn.addEventListener("click", applySkip);
       saveSecureBtn.addEventListener("click", saveSecureConfig);
       logoutBtn.addEventListener("click", () => {

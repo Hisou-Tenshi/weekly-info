@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import base64
@@ -258,10 +259,23 @@ def build_mail(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--send-only",
+        action="store_true",
+        help="立即发送一封邮件，但不更改任何 state。",
+    )
+    args = parser.parse_args()
+
     now_jst = datetime.now(tz=timezone.utc).astimezone(JST)
     state = _load_state()
-    skip = _get_skip_weeks_remaining(state)
+    if args.send_only:
+        should_send, subject, body, recipients, _, _, _ = build_mail(now_jst, state)
+        if should_send:
+            send_email_via_smtp(subject, body, recipients)
+        return
 
+    skip = _get_skip_weeks_remaining(state)
     # 跳过优先：只要剩余跳过周数 > 0，本周不发送，并递减 1（一次性，跨周递减）
     if skip > 0:
         _set_skip_weeks_remaining(state, skip - 1)
