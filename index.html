@@ -412,22 +412,6 @@
                   保存前会按字母序自动排序；顺序不影响轮换逻辑。
                 </div>
               </div>
-            </fieldset>
-
-            <fieldset>
-              <legend>邮件模板</legend>
-              <div class="form-field">
-                <div class="label-row">
-                  <label for="templateText"
-                    >邮件主干正文（支持变量 {{presenter}} {{month}} {{day}}）</label
-                  >
-                  <span class="required" title="空模板会使用默认模板">建议填写</span>
-                </div>
-                <textarea id="templateText" autocomplete="off" spellcheck="false"></textarea>
-                <div class="form-help">
-                  系统会按周计算当期的周三日期，并替换变量后发送。
-                </div>
-              </div>
 
               <div class="row">
                 <div class="col-1 form-field">
@@ -455,6 +439,23 @@
                   </div>
                 </div>
               </div>
+            </fieldset>
+
+            <fieldset>
+              <legend>邮件模板</legend>
+              <div class="form-field">
+                <div class="label-row">
+                  <label for="templateText"
+                    >邮件主干正文（支持变量 {{presenter}} {{month}} {{day}}）</label
+                  >
+                  <span class="required" title="空模板会使用默认模板">建议填写</span>
+                </div>
+                <textarea id="templateText" autocomplete="off" spellcheck="false"></textarea>
+                <div class="form-help">
+                  系统会按周计算当期的周三日期，并替换变量后发送。
+                </div>
+              </div>
+
               <div class="row">
                 <div class="col-1 form-field">
                   <div class="label-row">
@@ -476,7 +477,7 @@
               <button class="btn" id="saveSecureBtn" type="button">
                 加密保存成员与模板
               </button>
-              <span class="small muted">保存后建议点“刷新状态”确认生效。</span>
+              <span class="small muted">保存成功后会自动刷新顶部「下次发送」状态。</span>
             </div>
           </form>
           <div id="status" class="status"></div>
@@ -854,6 +855,7 @@
           }
           clearFrontFailures();
           setStatus("已加密保存成员列表与邮件模板。", "success");
+          await loadState();
         } catch (e) {
           console.error(e);
           setStatus(`加密保存失败：${e.message || "请检查密码与服务端密钥配置。"}。`, "error");
@@ -864,6 +866,10 @@
 
       async function sendNow() {
         try {
+          const ok = window.confirm(
+            "确定要立即触发发送吗？\n\n将调用 GitHub Actions 以 send-only 模式发信，不会修改 state.json。"
+          );
+          if (!ok) return;
           const lock = checkFrontLock();
           if (lock.locked) {
             setStatus(`登录节流中，请 ${Math.ceil(lock.retryMs / 1000)} 秒后重试。`, "error");
