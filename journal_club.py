@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import base64
@@ -26,23 +27,38 @@ def _get_env_list(name: str) -> List[str]:
     return [x.strip() for x in raw.split(",") if x.strip()]
 
 
+def _default_member_names() -> List[str]:
+    return [
+        "Liu Yuting",
+        "Sun Lifu",
+        "Bao Xuanrong",
+        "Cheng Boyi",
+        "Li Peizhe",
+        "Liu Zhaoyang",
+    ]
+
+
+def _members_sorted_from_secure(secure: dict) -> List[str]:
+    members = secure.get("jc_members") or []
+    if not members:
+        members = _default_member_names()
+    return sorted((str(m).strip() for m in members if str(m).strip()), key=lambda s: s.casefold())
+
+
+def _anchor_signature(secure: dict) -> str:
+    """与前端 / api/state 使用同一规则，配置变更后需重新 bootstrap。"""
+    m = _members_sorted_from_secure(secure)
+    start = str(secure.get("jc_start_wed", "2026-04-08"))
+    anch = str(secure.get("jc_anchor_presenter", "") or "").strip()
+    raw = start + "\n" + anch + "\n" + "\n".join(m)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
 def _load_members() -> List[str]:
     """
     从环境变量 JC_MEMBERS 读取轮值名单（逗号分隔）。
     """
-    members = _load_secure_config().get("jc_members", [])
-    if not members:
-        # 默认示例顺序，不含邮箱，仅姓名
-        members = [
-            "Liu Yuting",
-            "Sun Lifu",
-            "Bao Xuanrong",
-            "Cheng Boyi",
-            "Li Peizhe",
-            "Liu Zhaoyang",
-        ]
-    # 初始队列规则：按字母顺序排
-    return sorted(members, key=lambda s: s.casefold())
+    return _members_sorted_from_secure(_load_secure_config())
 
 
 def _decrypt_secure_config() -> dict:
@@ -141,40 +157,47 @@ def _effective_run_time_jst(now_jst: datetime) -> datetime:
 
 def _bootstrap_state_if_needed(state: dict) -> bool:
     """
-    将“锚点周三”解释为：已经发生过一次轮换的那次周三（例如你写在名单第一行括号里的日期）。
+    根据加密配置中的「锚点周三 + 该周轮换讲者」推导初始队列（锚点周三已完成一轮轮换周）：
 
-    因此在首次初始化时，自动执行一次“轮换周成功发送后的状态推进”，让下一次发送落在：
-    - 保持周
-    - 轮值人为轮换后的队首（上一周轮换前的第二位）
+    - 成员名单在配置中按字母序规范化
+    - jc_anchor_presenter = 该锚点周三轮换周的讲者（轮换前队首，轮换后移到队尾）
+    - 推导队列：其余成员按字母序 + 该讲者在末尾；下一次发送为保持周（send_step=1）
+
+    使用 anchor_sig 检测配置是否变更；变更后需重新 bootstrap（由保存配置 API 清除标记，或此处发现 sig 不一致）。
 
     返回：是否修改了 state（用于决定是否需要保存）。
     """
-    if state.get("bootstrapped_v1") is True:
+    secure = _load_secure_config()
+    sig = _anchor_signature(secure)
+    if state.get("bootstrapped_v1") is True and state.get("anchor_sig") == sig:
         return False
 
-    # 仅在空状态或旧字段状态下做一次性初始化
-    queue = state.get("members_queue") or []
-    step = state.get("send_step", None)
-    if isinstance(queue, list) and queue and isinstance(step, int):
-        state["bootstrapped_v1"] = True
-        return True
-
-    queue = _load_members()
-    if not queue:
+    sorted_members = _members_sorted_from_secure(secure)
+    if not sorted_members:
         state["members_queue"] = []
         state["send_step"] = 0
         state["last_presenter"] = None
         state["bootstrapped_v1"] = True
+        state["anchor_sig"] = sig
+        state.pop("cycle_id", None)
+        state.pop("cycle_presenter", None)
         return True
 
-    first = queue[0]
-    rotated = queue[1:] + [first] if len(queue) > 1 else queue[:]
+    anchor = str(secure.get("jc_anchor_presenter", "") or "").strip()
+    if anchor and anchor in sorted_members:
+        rest = [x for x in sorted_members if x != anchor]
+        rotated = rest + [anchor]
+        presenter_done = anchor
+    else:
+        first = sorted_members[0]
+        rotated = sorted_members[1:] + [first] if len(sorted_members) > 1 else sorted_members[:]
+        presenter_done = first
+
     state["members_queue"] = rotated
-    # 下一次为保持周（因为锚点周三已经“轮换过一次”）
     state["send_step"] = 1
-    state["last_presenter"] = first
+    state["last_presenter"] = presenter_done
     state["bootstrapped_v1"] = True
-    # 兼容旧字段（若存在则清掉，避免混淆）
+    state["anchor_sig"] = sig
     state.pop("cycle_id", None)
     state.pop("cycle_presenter", None)
     return True

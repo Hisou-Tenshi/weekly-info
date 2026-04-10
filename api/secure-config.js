@@ -3,6 +3,8 @@ const {
   getRepoParts,
   getBranch,
   getSecureConfigPath,
+  readStateFile,
+  writeStateFile,
 } = require("./_github");
 const {
   readJsonBody,
@@ -54,21 +56,42 @@ module.exports = async (req, res) => {
         jc_template: plain.jc_template || "",
         jc_start_wed: plain.jc_start_wed || "2026-04-08",
         jc_subject: plain.jc_subject || "",
+        jc_anchor_presenter: plain.jc_anchor_presenter || "",
       });
       return;
     }
 
     if (req.method === "POST") {
-      const jc_members = Array.isArray(body.jc_members)
+      let jc_members = Array.isArray(body.jc_members)
         ? body.jc_members.map((x) => String(x).trim()).filter(Boolean)
         : [];
+      jc_members = [...jc_members].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
       const jc_template = String(body.jc_template || "");
       const jc_start_wed = String(body.jc_start_wed || "2026-04-08");
       const jc_subject = String(body.jc_subject || "");
-      const payload = { jc_members, jc_template, jc_start_wed, jc_subject };
+      let jc_anchor_presenter = String(body.jc_anchor_presenter || "").trim();
+      if (jc_anchor_presenter && !jc_members.includes(jc_anchor_presenter)) {
+        jc_anchor_presenter = "";
+      }
+      const payload = {
+        jc_members,
+        jc_template,
+        jc_start_wed,
+        jc_subject,
+        jc_anchor_presenter,
+      };
       const encrypted = encryptSecurePayload(payload);
       const { sha } = await readSecureDoc();
       await writeSecureDoc(encrypted, sha);
+      try {
+        const { json: stJson, sha: stSha } = await readStateFile();
+        const nextState = { ...(stJson || {}) };
+        nextState.bootstrapped_v1 = false;
+        delete nextState.anchor_sig;
+        await writeStateFile(nextState, stSha);
+      } catch {
+        // 无 state.json 或无权读写的环境：忽略，由本地/Actions 首次运行再 bootstrap
+      }
       res.status(200).json({ ok: true });
       return;
     }

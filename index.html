@@ -116,7 +116,8 @@
       input[type="date"],
       input[type="password"],
       textarea,
-      input[type="number"] {
+      input[type="number"],
+      select {
         width: 100%;
         padding: 8px 10px;
         border-radius: 8px;
@@ -129,14 +130,16 @@
           box-shadow 120ms ease;
       }
       input:focus,
-      textarea:focus {
+      textarea:focus,
+      select:focus {
         outline: 2px solid #38bdf8;
         outline-offset: 0;
         border-color: transparent;
         box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.28);
       }
       input:disabled,
-      textarea:disabled {
+      textarea:disabled,
+      select:disabled {
         opacity: 0.72;
         cursor: not-allowed;
       }
@@ -406,7 +409,7 @@
                   spellcheck="false"
                 ></textarea>
                 <div class="form-help">
-                  保存后会用于生成轮换队列；初始会按字母序排列，新成员会追加到队尾。
+                  保存前会按字母序自动排序；顺序不影响轮换逻辑。
                 </div>
               </div>
             </fieldset>
@@ -434,11 +437,25 @@
                   </div>
                   <input id="startWedInput" type="date" />
                   <div class="form-help">
-                    建议填写“已经发生过轮换的那次周三”（例如你在名单第一行括号里写的日期）。
-                    系统会据此把下次发送视为“保持周”，轮值人为轮换后的队首。
+                    填写<strong>该次轮换周对应的周三</strong>（自动发送为当周周二 12:00，周三为发表日）。
                   </div>
                 </div>
 
+                <div class="col-1 form-field">
+                  <div class="label-row">
+                    <label for="anchorPresenterSelect">该周轮换讲者（锚点）</label>
+                    <span class="required" title="与锚点周三为同一次轮换周">必填</span>
+                  </div>
+                  <select id="anchorPresenterSelect" aria-label="该周轮换讲者（锚点）">
+                    <option value="">（请先填写成员名单）</option>
+                  </select>
+                  <div class="form-help">
+                    表示<strong>该锚点周三已完成一次轮换周</strong>时的讲者（轮换后此人移到队尾）。
+                    下次定时任务将视为<strong>保持周</strong>，轮值人为当前字母序队首。
+                  </div>
+                </div>
+              </div>
+              <div class="row">
                 <div class="col-1 form-field">
                   <div class="label-row">
                     <label for="subjectInput">邮件主题模板（可选）</label>
@@ -484,6 +501,7 @@
       const membersText = document.getElementById("membersText");
       const templateText = document.getElementById("templateText");
       const startWedInput = document.getElementById("startWedInput");
+      const anchorPresenterSelect = document.getElementById("anchorPresenterSelect");
       const subjectInput = document.getElementById("subjectInput");
       const statusEl = document.getElementById("status");
       const nextSendPill = document.getElementById("nextSendPill");
@@ -640,6 +658,41 @@
         return d.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
       }
 
+      function parseMemberLines(text) {
+        return String(text || "")
+          .split("\n")
+          .map((x) => x.trim())
+          .filter(Boolean);
+      }
+
+      function sortMembersInTextarea() {
+        const lines = parseMemberLines(membersText.value);
+        const sorted = [...new Set(lines)].sort((a, b) =>
+          a.localeCompare(b, undefined, { sensitivity: "base" })
+        );
+        membersText.value = sorted.join("\n");
+        refreshAnchorPresenterOptions();
+      }
+
+      function refreshAnchorPresenterOptions() {
+        const prev = anchorPresenterSelect.value;
+        const sorted = parseMemberLines(membersText.value).sort((a, b) =>
+          a.localeCompare(b, undefined, { sensitivity: "base" })
+        );
+        anchorPresenterSelect.innerHTML = "";
+        const emptyOpt = document.createElement("option");
+        emptyOpt.value = "";
+        emptyOpt.textContent = sorted.length ? "请选择…" : "（请先填写成员名单）";
+        anchorPresenterSelect.appendChild(emptyOpt);
+        for (const name of sorted) {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          anchorPresenterSelect.appendChild(opt);
+        }
+        if (prev && sorted.includes(prev)) anchorPresenterSelect.value = prev;
+      }
+
       async function loadState() {
         try {
           if (!hasPassword()) {
@@ -715,6 +768,10 @@
         }
       }
 
+      membersText.addEventListener("blur", () => {
+        sortMembersInTextarea();
+      });
+
       async function loadSecureConfig() {
         try {
           if (!hasPassword()) {
@@ -736,9 +793,14 @@
           clearFrontFailures();
           const data = await res.json();
           membersText.value = (data.jc_members || []).join("\n");
+          sortMembersInTextarea();
           templateText.value = data.jc_template || "";
           startWedInput.value = data.jc_start_wed || "2026-04-08";
           subjectInput.value = data.jc_subject || "";
+          const ap = (data.jc_anchor_presenter || "").trim();
+          if (ap && parseMemberLines(membersText.value).includes(ap)) {
+            anchorPresenterSelect.value = ap;
+          }
         } catch (e) {
           console.error(e);
           setStatus(`读取加密配置失败：${e.message || "请先输入访问密码。"}。`, "error");
@@ -757,16 +819,29 @@
             return;
           }
           saveSecureBtn.disabled = true;
-          const members = membersText.value
-            .split("\n")
-            .map((x) => x.trim())
-            .filter(Boolean);
+          sortMembersInTextarea();
+          const members = parseMemberLines(membersText.value).sort((a, b) =>
+            a.localeCompare(b, undefined, { sensitivity: "base" })
+          );
+          membersText.value = members.join("\n");
+          const anchorPresenter = (anchorPresenterSelect.value || "").trim();
+          if (!anchorPresenter) {
+            setStatus("请选择「该周轮换讲者（锚点）」后再保存。", "error");
+            saveSecureBtn.disabled = false;
+            return;
+          }
+          if (!members.includes(anchorPresenter)) {
+            setStatus("锚点讲者必须在成员名单中。", "error");
+            saveSecureBtn.disabled = false;
+            return;
+          }
           const payload = {
             password: getPassword(),
             jc_members: members,
             jc_template: templateText.value || "",
             jc_start_wed: (startWedInput.value || "2026-04-08").trim(),
             jc_subject: (subjectInput.value || "").trim(),
+            jc_anchor_presenter: anchorPresenter,
           };
           const res = await fetch(`${apiBase}/secure-config`, {
             method: "POST",

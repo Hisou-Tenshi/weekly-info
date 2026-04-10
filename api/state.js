@@ -1,3 +1,4 @@
+const crypto = require("crypto");
 const {
   readStateFile,
   ghFetch,
@@ -55,41 +56,71 @@ function baseWednesdayUtcForRun(runUtc) {
   return nextWednesdayJst(runUtc);
 }
 
-function bootstrapIfNeeded(stateJson, members) {
-  const already = stateJson && stateJson.bootstrapped_v1 === true;
-  const queue = Array.isArray(stateJson?.members_queue) ? stateJson.members_queue : [];
-  const hasStep = typeof stateJson?.send_step !== "undefined";
-  if (already) return { ...stateJson };
-  if (queue.length && hasStep) return { ...stateJson, bootstrapped_v1: true };
-
-  const sorted = (Array.isArray(members) ? members : [])
+function sortedMembersFromPlain(plain) {
+  const raw = Array.isArray(plain?.jc_members) ? plain.jc_members : [];
+  return raw
     .map((x) => String(x).trim())
     .filter(Boolean)
     .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+}
+
+function anchorSignature(plain) {
+  const sorted = sortedMembersFromPlain(plain);
+  const start = String(plain?.jc_start_wed || "2026-04-08");
+  const anch = String(plain?.jc_anchor_presenter || "").trim();
+  const raw = `${start}\n${anch}\n${sorted.join("\n")}`;
+  return crypto.createHash("sha256").update(raw, "utf8").digest("hex");
+}
+
+function computeBootstrapPreview(stateJson, plain) {
+  const sig = anchorSignature(plain);
+  const sorted = sortedMembersFromPlain(plain);
   if (!sorted.length) {
     return {
       ...stateJson,
       members_queue: [],
       send_step: 0,
+      last_presenter: null,
       bootstrapped_v1: true,
+      anchor_sig: sig,
     };
   }
-  const first = sorted[0];
-  const rotated = sorted.length > 1 ? [...sorted.slice(1), first] : [...sorted];
+  const anchor = String(plain?.jc_anchor_presenter || "").trim();
+  let rotated;
+  let presenterDone;
+  if (anchor && sorted.includes(anchor)) {
+    const rest = sorted.filter((x) => x !== anchor);
+    rotated = [...rest, anchor];
+    presenterDone = anchor;
+  } else {
+    const first = sorted[0];
+    rotated = sorted.length > 1 ? [...sorted.slice(1), first] : [...sorted];
+    presenterDone = first;
+  }
   return {
     ...stateJson,
     members_queue: rotated,
     send_step: 1,
-    last_presenter: first,
+    last_presenter: presenterDone,
     bootstrapped_v1: true,
+    anchor_sig: sig,
   };
+}
+
+function bootstrapIfNeeded(stateJson, plain) {
+  const sig = anchorSignature(plain);
+  const st = stateJson || {};
+  if (st.bootstrapped_v1 === true && st.anchor_sig === sig) {
+    return { ...st };
+  }
+  return computeBootstrapPreview(st, plain);
 }
 
 function computeNextSend(stateJson, plain, nowUtc = new Date()) {
   const startWed = parseIsoDateJst(plain.jc_start_wed || "2026-04-08");
   let remaining = Math.max(0, parseInt(stateJson?.skip_weeks_remaining || 0, 10) || 0);
   let run = nextTuesdayNoonJst(nowUtc);
-  const st = bootstrapIfNeeded(stateJson || {}, plain.jc_members || []);
+  const st = bootstrapIfNeeded(stateJson || {}, plain);
   const sendStep = Math.max(0, parseInt(st.send_step || 0, 10) || 0);
   const isRotate = sendStep % 2 === 0;
   const queue = Array.isArray(st.members_queue) ? st.members_queue : [];
@@ -132,9 +163,10 @@ async function readSecureDocPlain(defaultStartWed) {
     return {
       jc_start_wed: String(plain.jc_start_wed || defaultStartWed),
       jc_members: Array.isArray(plain.jc_members) ? plain.jc_members : [],
+      jc_anchor_presenter: String(plain.jc_anchor_presenter || "").trim(),
     };
   } catch {
-    return { jc_start_wed: defaultStartWed, jc_members: [] };
+    return { jc_start_wed: defaultStartWed, jc_members: [], jc_anchor_presenter: "" };
   }
 }
 

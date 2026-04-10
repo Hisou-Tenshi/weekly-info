@@ -266,6 +266,7 @@ function decryptSecurePayload(doc) {
       jc_template: "",
       jc_start_wed: "2026-04-08",
       jc_subject: "",
+      jc_anchor_presenter: "",
     };
   }
 
