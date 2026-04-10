@@ -443,15 +443,15 @@
 
                 <div class="col-1 form-field">
                   <div class="label-row">
-                    <label for="anchorPresenterSelect">该周轮换讲者（锚点）</label>
-                    <span class="required" title="与锚点周三为同一次轮换周">必填</span>
+                    <label for="anchorPresenterSelect">环上起点（锚点讲者）</label>
+                    <span class="required" title="字母序环上的当前起点">必填</span>
                   </div>
-                  <select id="anchorPresenterSelect" aria-label="该周轮换讲者（锚点）">
+                  <select id="anchorPresenterSelect" aria-label="环上起点（锚点讲者）">
                     <option value="">（请先填写成员名单）</option>
                   </select>
                   <div class="form-help">
-                    表示<strong>该锚点周三已完成一次轮换周</strong>时的讲者（轮换后此人移到队尾）。
-                    下次定时任务将视为<strong>保持周</strong>，轮值人为当前字母序队首。
+                    成员按字母序连成<strong>固定环</strong>；此处选择<strong>环上起点</strong>（当前轮到谁就从该人在环上的位置开始数）。
+                    名单顺序永不改变，仅<strong>沿环依次</strong>推进轮值（轮换周与保持周仍交替）。
                   </div>
                 </div>
               </div>
@@ -826,7 +826,7 @@
           membersText.value = members.join("\n");
           const anchorPresenter = (anchorPresenterSelect.value || "").trim();
           if (!anchorPresenter) {
-            setStatus("请选择「该周轮换讲者（锚点）」后再保存。", "error");
+            setStatus("请选择「环上起点（锚点讲者）」后再保存。", "error");
             saveSecureBtn.disabled = false;
             return;
           }

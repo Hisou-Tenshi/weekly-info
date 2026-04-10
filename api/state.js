@@ -78,7 +78,7 @@ function computeBootstrapPreview(stateJson, plain) {
   if (!sorted.length) {
     return {
       ...stateJson,
-      members_queue: [],
+      ring_index: 0,
       send_step: 0,
       last_presenter: null,
       bootstrapped_v1: true,
@@ -86,22 +86,12 @@ function computeBootstrapPreview(stateJson, plain) {
     };
   }
   const anchor = String(plain?.jc_anchor_presenter || "").trim();
-  let rotated;
-  let presenterDone;
-  if (anchor && sorted.includes(anchor)) {
-    const rest = sorted.filter((x) => x !== anchor);
-    rotated = [...rest, anchor];
-    presenterDone = anchor;
-  } else {
-    const first = sorted[0];
-    rotated = sorted.length > 1 ? [...sorted.slice(1), first] : [...sorted];
-    presenterDone = first;
-  }
+  const ringIndex = anchor && sorted.includes(anchor) ? sorted.indexOf(anchor) : 0;
   return {
     ...stateJson,
-    members_queue: rotated,
-    send_step: 1,
-    last_presenter: presenterDone,
+    ring_index: ringIndex,
+    send_step: 0,
+    last_presenter: null,
     bootstrapped_v1: true,
     anchor_sig: sig,
   };
@@ -110,7 +100,11 @@ function computeBootstrapPreview(stateJson, plain) {
 function bootstrapIfNeeded(stateJson, plain) {
   const sig = anchorSignature(plain);
   const st = stateJson || {};
-  if (st.bootstrapped_v1 === true && st.anchor_sig === sig) {
+  if (
+    st.bootstrapped_v1 === true &&
+    st.anchor_sig === sig &&
+    Number.isInteger(st.ring_index)
+  ) {
     return { ...st };
   }
   return computeBootstrapPreview(st, plain);
@@ -121,10 +115,12 @@ function computeNextSend(stateJson, plain, nowUtc = new Date()) {
   let remaining = Math.max(0, parseInt(stateJson?.skip_weeks_remaining || 0, 10) || 0);
   let run = nextTuesdayNoonJst(nowUtc);
   const st = bootstrapIfNeeded(stateJson || {}, plain);
+  const ring = sortedMembersFromPlain(plain);
   const sendStep = Math.max(0, parseInt(st.send_step || 0, 10) || 0);
   const isRotate = sendStep % 2 === 0;
-  const queue = Array.isArray(st.members_queue) ? st.members_queue : [];
-  const presenter = queue.length ? String(queue[0]) : "";
+  const riRaw = Math.max(0, parseInt(st.ring_index || 0, 10) || 0);
+  const ri = ring.length ? riRaw % ring.length : 0;
+  const presenter = ring.length ? String(ring[ri]) : "";
   const mode = isRotate ? "rotate" : "hold";
   for (let i = 0; i < 260; i++) {
     if (remaining > 0) {

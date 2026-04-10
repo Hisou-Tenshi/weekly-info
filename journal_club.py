@@ -157,47 +157,49 @@ def _effective_run_time_jst(now_jst: datetime) -> datetime:
 
 def _bootstrap_state_if_needed(state: dict) -> bool:
     """
-    根据加密配置中的「锚点周三 + 该周轮换讲者」推导初始队列（锚点周三已完成一轮轮换周）：
+    字母序固定环 + 锚点选「环上起点」：
 
-    - 成员名单在配置中按字母序规范化
-    - jc_anchor_presenter = 该锚点周三轮换周的讲者（轮换前队首，轮换后移到队尾）
-    - 推导队列：其余成员按字母序 + 该讲者在末尾；下一次发送为保持周（send_step=1）
+    - 成员按字母序排成环，顺序永不因发送而改变
+    - jc_anchor_presenter = 当前环上起点（下一位轮值从该人在环上的位置开始数）
+    - ring_index = 该人在排序名单中的下标；send_step=0 表示下一次为「轮换周」
 
-    使用 anchor_sig 检测配置是否变更；变更后需重新 bootstrap（由保存配置 API 清除标记，或此处发现 sig 不一致）。
+    使用 anchor_sig 检测配置是否变更；旧 state 无 ring_index 时会强制重新对齐。
 
     返回：是否修改了 state（用于决定是否需要保存）。
     """
     secure = _load_secure_config()
     sig = _anchor_signature(secure)
-    if state.get("bootstrapped_v1") is True and state.get("anchor_sig") == sig:
+    if (
+        state.get("bootstrapped_v1") is True
+        and state.get("anchor_sig") == sig
+        and isinstance(state.get("ring_index", None), int)
+    ):
         return False
 
-    sorted_members = _members_sorted_from_secure(secure)
-    if not sorted_members:
-        state["members_queue"] = []
+    ring = _members_sorted_from_secure(secure)
+    if not ring:
+        state["ring_index"] = 0
         state["send_step"] = 0
         state["last_presenter"] = None
         state["bootstrapped_v1"] = True
         state["anchor_sig"] = sig
+        state.pop("members_queue", None)
         state.pop("cycle_id", None)
         state.pop("cycle_presenter", None)
         return True
 
     anchor = str(secure.get("jc_anchor_presenter", "") or "").strip()
-    if anchor and anchor in sorted_members:
-        rest = [x for x in sorted_members if x != anchor]
-        rotated = rest + [anchor]
-        presenter_done = anchor
+    if anchor and anchor in ring:
+        ring_index = ring.index(anchor)
     else:
-        first = sorted_members[0]
-        rotated = sorted_members[1:] + [first] if len(sorted_members) > 1 else sorted_members[:]
-        presenter_done = first
+        ring_index = 0
 
-    state["members_queue"] = rotated
-    state["send_step"] = 1
-    state["last_presenter"] = presenter_done
+    state["ring_index"] = ring_index
+    state["send_step"] = 0
+    state["last_presenter"] = None
     state["bootstrapped_v1"] = True
     state["anchor_sig"] = sig
+    state.pop("members_queue", None)
     state.pop("cycle_id", None)
     state.pop("cycle_presenter", None)
     return True
@@ -218,7 +220,7 @@ def _load_state() -> dict:
     if not STATE_PATH.exists():
         return {
             "skip_weeks_remaining": 0,
-            "members_queue": [],
+            "ring_index": 0,
             "send_step": 0,
             "last_presenter": None,
         }
@@ -226,14 +228,14 @@ def _load_state() -> dict:
         with STATE_PATH.open("r", encoding="utf-8") as f:
             return json.load(f) or {
                 "skip_weeks_remaining": 0,
-                "members_queue": [],
+                "ring_index": 0,
                 "send_step": 0,
                 "last_presenter": None,
             }
     except Exception:  # noqa: BLE001
         return {
             "skip_weeks_remaining": 0,
-            "members_queue": [],
+            "ring_index": 0,
             "send_step": 0,
             "last_presenter": None,
         }
@@ -291,22 +293,20 @@ def compute_next_send_info(now_jst: datetime, skip_weeks_remaining: int) -> dict
     }
 
 
-def _ensure_queue(state: dict) -> List[str]:
-    desired = _load_members()
-    current = state.get("members_queue") or []
-    if not isinstance(current, list):
-        current = []
-    current = [str(x) for x in current if str(x)]
+def _presenter_ring() -> List[str]:
+    """字母序固定环（名单顺序永不因轮值而改变）。"""
+    return _load_members()
 
-    # 保留现有顺序中的仍存在成员
-    desired_set = {m for m in desired}
-    merged = [m for m in current if m in desired_set]
-    # 追加新成员（按字母顺序）
-    for m in desired:
-        if m not in merged:
-            merged.append(m)
-    state["members_queue"] = merged
-    return merged
+
+def _get_ring_index(state: dict, ring: List[str]) -> int:
+    if not ring:
+        return 0
+    try:
+        ri = int(state.get("ring_index", 0) or 0)
+    except Exception:  # noqa: BLE001
+        ri = 0
+    ri = ri % len(ring)
+    return ri
 
 
 def _get_send_step(state: dict) -> int:
@@ -323,22 +323,23 @@ def _is_rotate_week(state: dict) -> bool:
 
 
 def _pick_presenter_for_week(state: dict) -> str:
-    queue = _ensure_queue(state)
-    if not queue:
+    ring = _presenter_ring()
+    if not ring:
         return ""
-    if _is_rotate_week(state):
-        return queue[0]
-    # 保持周：轮值人为“上一周轮换后的第一位”，即当前队首
-    return queue[0]
+    ri = _get_ring_index(state, ring)
+    return ring[ri]
 
 
 def _after_send_update_state(state: dict, presenter: str) -> None:
-    queue = _ensure_queue(state)
-    rotate = _is_rotate_week(state)
-    if rotate and queue and queue[0] == presenter:
-        queue.append(queue.pop(0))
-    state["members_queue"] = queue
     state["last_presenter"] = presenter
+    ring = _presenter_ring()
+    if _is_rotate_week(state):
+        state["send_step"] = _get_send_step(state) + 1
+        return
+    # 保持周结束：沿环前进到下一人（不改动名单顺序）
+    if ring:
+        ri = _get_ring_index(state, ring)
+        state["ring_index"] = (ri + 1) % len(ring)
     state["send_step"] = _get_send_step(state) + 1
 
 
@@ -375,10 +376,11 @@ def build_mail(
     secure_template = _load_secure_config().get("jc_template", "")
     template = secure_template or (
         "文献分享（Journal Club）\n\n"
-        "每周由成员分享领域内最新的研究论文（轮值：轮换一次-保持一次）。\n\n"
+        "每周由成员分享领域内最新的研究论文（轮值：轮换一次-保持一次；"
+        "名单为字母序固定环，仅按序号沿环前进）。\n\n"
         f"本期轮值：{presenter}（{month}月{day}日）\n\n"
-        "文献分享轮值名单：\n"
-        + "\n".join(_ensure_queue(state) or _load_members())
+        "文献分享轮值名单（字母序环）：\n"
+        + "\n".join(_presenter_ring())
         + "\n\n请大家提前准备，期待讨论！"
     )
     template = (
@@ -403,7 +405,7 @@ def main() -> None:
     now_jst = datetime.now(tz=timezone.utc).astimezone(JST)
     state = _load_state()
 
-    # 首次初始化：根据锚点周三预推进一次轮换，避免第一次触发还使用“锚点当天的第一位”
+    # 首次初始化 / 配置变更：按「字母序环 + 锚点起点」对齐 ring_index
     if args.send_only:
         state = dict(state)
         _bootstrap_state_if_needed(state)
