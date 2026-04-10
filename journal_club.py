@@ -50,7 +50,8 @@ def _anchor_signature(secure: dict) -> str:
     m = _members_sorted_from_secure(secure)
     start = str(secure.get("jc_start_wed", "2026-04-08"))
     anch = str(secure.get("jc_anchor_presenter", "") or "").strip()
-    raw = start + "\n" + anch + "\n" + "\n".join(m)
+    # 版本后缀：语义变更时 bump，强制与旧 state 重新对齐
+    raw = start + "\n" + anch + "\n" + "\n".join(m) + "\nanchor_after_present_v2"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -157,11 +158,11 @@ def _effective_run_time_jst(now_jst: datetime) -> datetime:
 
 def _bootstrap_state_if_needed(state: dict) -> bool:
     """
-    字母序固定环 + 锚点选「环上起点」：
+    字母序固定环 + 锚点表示「该周三刚讲完的人」：
 
-    - 成员按字母序排成环，顺序永不因发送而改变
-    - jc_anchor_presenter = 当前环上起点（下一位轮值从该人在环上的位置开始数）
-    - ring_index = 该人在排序名单中的下标；send_step=0 表示下一次为「轮换周」
+    - jc_anchor_presenter = 锚点周三上刚完成轮换讲解的成员
+    - ring_index = 环上**下一位**（刚讲完的人的下一人）
+    - send_step = 1 → 下一封邮件为**保持周**（发表日 = 触发周二对应 base 周三 + 7 天）
 
     使用 anchor_sig 检测配置是否变更；旧 state 无 ring_index 时会强制重新对齐。
 
@@ -188,15 +189,18 @@ def _bootstrap_state_if_needed(state: dict) -> bool:
         state.pop("cycle_presenter", None)
         return True
 
+    # 锚点讲者 = 该「锚点周三」上**刚完成一次轮换讲解**的人（可能为现场，不一定发过邮件）。
+    # 下一封定时邮件应为**保持周**：轮值人为环上**下一位**，发表日为触发周二对应的「下周三」（+7 天规则）。
     anchor = str(secure.get("jc_anchor_presenter", "") or "").strip()
     if anchor and anchor in ring:
-        ring_index = ring.index(anchor)
+        ai = ring.index(anchor)
+        ring_index = (ai + 1) % len(ring)
     else:
         ring_index = 0
 
     state["ring_index"] = ring_index
-    state["send_step"] = 0
-    state["last_presenter"] = None
+    state["send_step"] = 1
+    state["last_presenter"] = anchor if anchor and anchor in ring else None
     state["bootstrapped_v1"] = True
     state["anchor_sig"] = sig
     state.pop("members_queue", None)

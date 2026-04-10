@@ -443,15 +443,15 @@
 
                 <div class="col-1 form-field">
                   <div class="label-row">
-                    <label for="anchorPresenterSelect">环上起点（锚点讲者）</label>
-                    <span class="required" title="字母序环上的当前起点">必填</span>
+                    <label for="anchorPresenterSelect">锚点周三刚讲完的人</label>
+                    <span class="required" title="该周三已完成一次轮换讲解的成员">必填</span>
                   </div>
-                  <select id="anchorPresenterSelect" aria-label="环上起点（锚点讲者）">
+                  <select id="anchorPresenterSelect" aria-label="锚点周三刚讲完的人">
                     <option value="">（请先填写成员名单）</option>
                   </select>
                   <div class="form-help">
-                    成员按字母序连成<strong>固定环</strong>；此处选择<strong>环上起点</strong>（当前轮到谁就从该人在环上的位置开始数）。
-                    名单顺序永不改变，仅<strong>沿环依次</strong>推进轮值（轮换周与保持周仍交替）。
+                    成员按字母序连成<strong>固定环</strong>。此处选<strong>锚点周三当天刚完成讲解的人</strong>（如现场已讲完）；
+                    下一封邮件将视为<strong>保持周</strong>，轮值为环上<strong>下一位</strong>，发表日为「触发周二」对应的<strong>再下一周三</strong>（例如 4/14 触发 → 4/22）。
                   </div>
                 </div>
               </div>
@@ -826,7 +826,7 @@
           membersText.value = members.join("\n");
           const anchorPresenter = (anchorPresenterSelect.value || "").trim();
           if (!anchorPresenter) {
-            setStatus("请选择「环上起点（锚点讲者）」后再保存。", "error");
+            setStatus("请选择「锚点周三刚讲完的人」后再保存。", "error");
             saveSecureBtn.disabled = false;
             return;
           }

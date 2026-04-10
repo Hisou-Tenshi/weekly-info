@@ -68,7 +68,7 @@ function anchorSignature(plain) {
   const sorted = sortedMembersFromPlain(plain);
   const start = String(plain?.jc_start_wed || "2026-04-08");
   const anch = String(plain?.jc_anchor_presenter || "").trim();
-  const raw = `${start}\n${anch}\n${sorted.join("\n")}`;
+  const raw = `${start}\n${anch}\n${sorted.join("\n")}\nanchor_after_present_v2`;
   return crypto.createHash("sha256").update(raw, "utf8").digest("hex");
 }
 
@@ -86,12 +86,18 @@ function computeBootstrapPreview(stateJson, plain) {
     };
   }
   const anchor = String(plain?.jc_anchor_presenter || "").trim();
-  const ringIndex = anchor && sorted.includes(anchor) ? sorted.indexOf(anchor) : 0;
+  let ringIndex = 0;
+  let lastPresenter = null;
+  if (anchor && sorted.includes(anchor)) {
+    const ai = sorted.indexOf(anchor);
+    ringIndex = (ai + 1) % sorted.length;
+    lastPresenter = anchor;
+  }
   return {
     ...stateJson,
     ring_index: ringIndex,
-    send_step: 0,
-    last_presenter: null,
+    send_step: 1,
+    last_presenter: lastPresenter,
     bootstrapped_v1: true,
     anchor_sig: sig,
   };
